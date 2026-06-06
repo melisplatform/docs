@@ -1,0 +1,85 @@
+/* ============================================================================
+   Melis Platform docs theme — tokens from designsystem/colors_and_type.css
+   (melisplatform.com Martex "red" theme). One accent: pure red over white.
+   ============================================================================ */
+
+:root {
+  /* Brand = pure red #ff0000 */
+  --vp-c-brand-1: #e60000;        /* slightly darkened for AA contrast on white text/links */
+  --vp-c-brand-2: #ff0000;
+  --vp-c-brand-3: #ff0000;        /* buttons / active */
+  --vp-c-brand-soft: #ffe6e6;     /* --theme-light */
+
+  /* (Ink / surface tokens are set in light mode only — see :root:not(.dark)
+     below — so they don't override VitePress's dark-mode values.) */
+
+  /* Typography — Plus Jakarta Sans (display) + Rubik (body) */
+  --vp-font-family-base: 'Rubik', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --vp-font-family-heading: 'Plus Jakarta Sans', sans-serif;
+  --vp-font-family-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Home hero: red brand gradient on the title */
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(120deg, #ff0000, #ff4d4d);
+  --vp-home-hero-image-background-image: linear-gradient(180deg, rgba(255,230,230,.8) 50%, rgba(255,230,230,.05) 100%);
+  --vp-home-hero-image-filter: blur(56px);
+
+  /* Buttons */
+  --vp-button-brand-bg: #ff0000;
+  --vp-button-brand-hover-bg: #e60000;
+  --vp-button-brand-active-bg: #cc0000;
+  --vp-button-brand-border: transparent;
+
+  /* Code blocks: dark terminal look in light mode too (Shiki = github-dark) */
+  --vp-code-block-bg: #1b1b1f;
+}
+
+/* Light-mode-only brand ink & surfaces (from the design system).
+   Scoped with :not(.dark) so dark mode keeps VitePress's dark palette. */
+:root:not(.dark) {
+  --vp-c-text-1: #353f4f;   /* --ink (headings/strong) */
+  --vp-c-text-2: #6c757d;   /* --body */
+  --vp-c-bg-soft: #f2f4f8;  /* --mist-gray */
+  --vp-c-bg-alt: #fbfbfd;   /* --surface-200 */
+}
+
+.dark {
+  --vp-c-brand-1: #ff4d4d;
+  --vp-c-brand-2: #ff3333;
+  --vp-c-brand-3: #ff1a1a;
+  --vp-c-brand-soft: rgba(255, 0, 0, 0.16);
+}
+
+/* Headings use the display font with the brand weights */
+h1, h2, h3, h4, .VPHero .name, .VPHero .text {
+  font-family: var(--vp-font-family-heading);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Soft-shadowed, rounded "cards" like the marketing site (radius 12, soft shadow) */
+.VPFeature {
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.VPFeature:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.1);
+}
+
+/* Terminal-like code blocks (rounded, soft shadow, readable language label) */
+.vp-doc div[class*='language-'] {
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+.vp-doc [class*='language-'] > span.lang {
+  color: #9a9aa8;
+}
+.vp-doc [class*='language-'] code {
+  color: #e6e6ef; /* default text on the dark block */
+}
+.vp-doc [class*='language-'] .line-numbers-wrapper {
+  color: #5b5b6b;
+}
