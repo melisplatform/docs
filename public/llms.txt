@@ -1,0 +1,54 @@
+# Melis Platform — Developer Documentation
+
+> Melis Platform is an open-source CMS and application platform built on Laminas (ZF2 lineage).
+> This documentation targets developers and AI assistants working with the platform.
+> License: OSL-3.0. Source: https://github.com/melisplatform
+
+## Key concepts
+
+- Everything is a **Laminas module**. Backoffice modules are listed in `config/melis.module.load.php`.
+- The **config tree** (`MelisCoreConfig`) aggregates every module's `app.*.php` files under a `plugins` root, queryable by path or **melis key**.
+- The backoffice UI is **config-driven**: pages are trees of **zones**, each zone declares a **forward** (module/controller/action) rendered by `PluginViewController`.
+- Two env vars drive every install: `MELIS_PLATFORM` (selects the DB config file) and `MELIS_MODULE` (selects the front-office site module).
+- Auth: bcrypt passwords in `melis_core_user`; rights are an **XML allow-list** in `usr_rights` (empty = full access).
+- Caching: filesystem caches under `cache/`; clear `cache/melis*` after any config change.
+- Schema migrations: **dbdeploy** (per-module numbered deltas) + **Flyway** (project-level SQL).
+
+## Documentation pages
+
+- [Installation](/guide/getting-started) — Docker, Composer and GitHub source install paths; requirements; env vars.
+- [Architecture & concepts](/guide/concepts) — modules, config tree, melis keys, zones & forwards, services, events.
+- [Architecture deep-dive](/guide/architecture) — full request lifecycle (backoffice + front-office), auth/rights mechanics, caching, events, key files.
+- [Build a website (CMS)](/guide/build-a-site) — sites, pages, templates, MelisTag, MelisDragDropZone, front-office rendering.
+- [Commerce](/guide/commerce) — catalog, cart, orders, customers, front-office plugins.
+- [Create your first tool](/guide/create-a-tool) — module anatomy, config files, controller/service/view, rights.
+- [Templating & dashboard plugins](/guide/plugins) — MelisTemplatingPlugin, MelisCoreDashboardTemplatingPlugin.
+- [AI: agents & engine](/guide/ai) — MelisAI, MelisAIEngine, providers (Claude, Gemini), MelisAIChat view helper.
+- [MCP](/guide/mcp) — MCP client integration, built-in servers (file, database, tool_creator), adding custom MCP tools, security.
+- [Troubleshooting](/guide/troubleshooting) — dev mode, cache clearing, common pitfalls (modules, rights, assets, translations).
+- [Module reference](/reference/modules) — all 35 CE modules grouped by area.
+- [Configuration reference](/reference/configuration) — env vars, platform file, app.*.php family, translations, assets, caches.
+
+## Module reference pages (one per module)
+
+Core: melis-core, melis-asset-manager, melis-composerdeploy, melis-dbdeploy, melis-installer, melis-marketplace
+CMS & front: melis-cms, melis-engine, melis-front, melis-demo-cms, melis-cms-news, melis-cms-prospects, melis-cms-slider, melis-cms-category2, melis-cms-page-historic, melis-cms-page-analytics, melis-cms-page-script-editor, melis-cms-site-robot
+Commerce: melis-commerce, melis-commerce-order-invoice
+Extend & utilities: melis-tool-creator, melis-templating-plugin-creator, melis-dashboard-plugin-creator, melis-data-source, melis-document-upload, melis-calendar, melis-messenger, melis-design, melis-small-business
+AI: melis-ai, melis-ai-engine, melis-ai-engine-claude, melis-ai-engine-gemini, melis-ai-community-extensions, melis-ai-tool-creator
+
+## Key file paths (in the installed skeleton)
+
+- `config/melis.module.load.php` — ordered backoffice module list
+- `config/application.config.php` — app bootstrap, module assembly, config glob paths
+- `config/autoload/platforms/<MELIS_PLATFORM>.php` — DB connection per environment
+- `vendor/melisplatform/melis-core/src/MelisModuleManager.php` — module assembly
+- `vendor/melisplatform/melis-core/src/Module.php` — core bootstrap & MVC listeners
+- `vendor/melisplatform/melis-core/src/Service/MelisCoreConfigService.php` — config tree
+- `vendor/melisplatform/melis-core/src/Controller/PluginViewController.php` — zone rendering
+- `vendor/melisplatform/melis-core/src/Service/MelisCoreAuthService.php` — authentication
+- `vendor/melisplatform/melis-core/src/Service/MelisCoreRightsService.php` — rights
+- `vendor/melisplatform/melis-engine/src/Service/MelisPageService.php` — CMS page loading
+- `vendor/melisplatform/melis-front/src/Listener/MelisFrontSEORouteListener.php` — SEO routing
+- `vendor/melisplatform/melis-ai-engine/src/Service/MelisAIEngineAgentService.php` — AI agent runtime
+- `vendor/melisplatform/melis-ai-engine/src/Service/MelisAIEngineMcpService.php` — MCP client

@@ -78,6 +78,11 @@ Backoffice login: **`admin`** / **`password`**. phpMyAdmin: server `melis-db-dev
 user `admin` / `password`, database `dev`.
 :::
 
+::: warning Change credentials before going to production
+The default `admin`/`password` credentials are for local development only.
+Change them — and the database password — before exposing any instance publicly.
+:::
+
 ### Useful Make targets
 
 ```bash

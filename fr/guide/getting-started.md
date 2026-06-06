@@ -78,6 +78,11 @@ Connexion backoffice : **`admin`** / **`password`**. phpMyAdmin : serveur `melis
 utilisateur `admin` / `password`, base `dev`.
 :::
 
+::: warning À changer avant la mise en production
+Les identifiants `admin`/`password` sont réservés au développement local.
+Modifiez-les — ainsi que le mot de passe de la base de données — avant d'exposer une instance publiquement.
+:::
+
 ### Cibles Make utiles
 
 ```bash

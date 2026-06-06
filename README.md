@@ -1,13 +1,12 @@
 # Melis Platform — Developer Documentation
 
 Bilingual (EN + FR) developer documentation for Melis Platform, built with
-[VitePress](https://vitepress.dev/). Themed with the Melis brand
-(`designsystem/colors_and_type.css`): red `#ff0000` accent, Plus Jakarta Sans + Rubik.
+[VitePress](https://vitepress.dev/). Themed with the Melis brand: red `#ff0000` accent,
+Plus Jakarta Sans + Rubik (via `.vitepress/theme/custom.css`).
 
 ## Develop
 
 ```bash
-cd documentation
 npm install
 npm run dev       # local dev server with hot reload
 ```
@@ -22,16 +21,18 @@ npm run preview   # serve the built site locally
 ## Structure
 
 ```
-documentation/
+.
 ├── .vitepress/
 │   ├── config.mts            # site config + EN/FR i18n (nav, sidebar)
 │   └── theme/                # Melis brand theme (custom.css)
+├── public/                   # static assets (logos, icons)
 ├── index.md                  # EN home
 ├── guide/                    # EN guide pages
 │   ├── getting-started.md
 │   ├── concepts.md
-│   └── create-a-tool.md
-└── fr/                       # FR mirror (home + guide/)
+│   └── ...
+├── reference/                # EN module & configuration reference
+└── fr/                       # FR mirror (home + guide/ + reference/)
 ```
 
 Every English page has a French counterpart under `fr/`. When you add a page, add it to **both**

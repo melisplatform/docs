@@ -26,7 +26,7 @@ export default defineConfig({
   base: (process.env.VITEPRESS_BASE ?? '/') as '/',
   lastUpdated: true,
   cleanUrls: true,
-  ignoreDeadLinks: true,
+  ignoreDeadLinks: 'localhostLinks',
   srcExclude: ['README.md'],
 
   // Always render code blocks with a dark (terminal-like) syntax theme,
