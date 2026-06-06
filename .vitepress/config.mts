@@ -123,6 +123,7 @@ export default defineConfig({
           pattern: 'https://github.com/melisplatform/docs/edit/main/:path',
           text: 'Edit this page on GitHub'
         },
+        lastUpdated: { text: 'Last updated' },
         docFooter: { prev: 'Previous', next: 'Next' }
       }
     },
