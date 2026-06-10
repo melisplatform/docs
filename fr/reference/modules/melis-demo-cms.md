@@ -1,21 +1,24 @@
 # MelisDemoCms
 
-> Le site de démonstration officiel de Melis Platform — l'exemple canonique d'un **module de site**.
-> Paquet Composer : `melisplatform/melis-demo-cms`.
+> Le site de référence et de démonstration officiel de Melis Platform — un **module de site**
+> prêt à installer qui montre aux développeurs comment un site front-office Melis est architecturé.
+> Paquet `melisplatform/melis-demo-cms`.
 
-## Objectif
+## Présentation
 
-`MelisDemoCms` est un site web front-office prêt à l'emploi livré avec Melis Platform. Ce n'est pas
-un outil de backoffice : c'est un **site** (`type: melisplatform-site`, `extra.melis-site: true`)
-dont les pages, gabarits et contrôleurs front montrent comment relier le rendu MelisFront/MelisEngine
-aux modules de contenu du CMS — sliders, actualités, prospects (formulaires de contact), listes par
-dossier et bannière RGPD. À lire comme l'implémentation de référence pour
-[Construire un site](/fr/guide/build-a-site).
+`MelisDemoCms` est un site web front-office complet et installable (`melis-site: true`,
+`type: melisplatform-module`, catégorie `cms`). Ce n'est pas un outil de back-office : ses pages,
+contrôleurs et gabarits de plugins illustrent les trois techniques de composition de contenu —
+**placement manuel de plugins**, **zones de drag-and-drop** et **balises éditables en ligne** —
+en s'appuyant sur MelisFront, MelisEngine et les modules de contenu CMS (slider, actualités,
+prospects). À utiliser comme implémentation de référence pour
+[construire un site](/fr/guide/build-a-site).
 
 ## Activation
 
-`MelisDemoCms` est un module Laminas standard. Il est listé dans le `config/melis.module.load.php`
-du squelette ; le `config/module.load.php` du module déclare les modules qu'il attend à ses côtés :
+`MelisDemoCms` est un module de site Laminas installé sous `module/MelisSites/MelisDemoCms/` par
+les `installer-paths` de Composer. Son propre `config/module.load.php` déclare les modules qu'il
+attend à ses côtés :
 
 ```php
 // vendor/melisplatform/melis-demo-cms/config/module.load.php
@@ -24,54 +27,44 @@ du squelette ; le `config/module.load.php` du module déclare les modules qu'il 
 'MelisDemoCms', 'MelisCmsPageScriptEditor'
 ```
 
-Dépendances Composer (`composer.json`) : `melis-cms`, `melis-cms-slider`, `melis-cms-prospects`,
-`melis-cms-news`, `melis-cms-page-script-editor` ; `melis-engine` et `melis-front` sont suggérés
-(et requis à l'exécution pour le rendu). Le site est servi lorsque le vhost définit
-`SetEnv MELIS_MODULE "MelisDemoCms"`. Son contenu (pages, sliders, actualités…) est installé via le
-flux d'**installation de site** de la marketplace, et non par un simple dump SQL (voir
-[Base de données](#base-de-donnees)).
+Dépendances Composer requises : `melis-cms`, `melis-cms-slider`, `melis-cms-prospects`,
+`melis-cms-news`, `melis-cms-page-script-editor` (`^5.2`). `melis-engine` et `melis-front` sont
+suggérés (et requis à l'exécution). Le site est activé pour un domaine en définissant la variable
+d'environnement vhost `MELIS_MODULE "MelisDemoCms"`.
 
 ## Services principaux
 
 | Alias de service | Rôle |
 | --- | --- |
-| `DemoCmsService` | Aides propres au site, utilisées par les contrôleurs front et les listeners. Construit le menu personnalisé du site (`customizeSiteMenu()`), injecte un sous-menu d'actualités groupé par date (`getNewsListFormMenu()`) et produit les options du filtre actualités par année/mois (`getNewsListMonthsYears()`). Étend `MelisCore\Service\MelisGeneralService`. |
-| `MelisPlatformTable` | Table générique sur `melis_core_platform` (`MelisEngine\Model\Tables\MelisGenericTable`, clé primaire `plf_id`). |
+| `DemoCmsService` | Aides propres au site, utilisées par les contrôleurs front et les listeners d'installation. |
+| `MelisPlatformTable` | Table gateway générique sur la table centrale de la plateforme (`MelisEngine\Model\Tables\MelisGenericTable`, clé primaire `plf_id`). |
 
-`DemoCmsService` s'appuie sur des services de la plateforme qu'il résout à l'exécution —
-`MelisSiteConfigService` (MelisFront), `MelisCmsNewsTable` (MelisCmsNews) et `MelisEngineTree` —
-plutôt que de les réimplémenter.
+## Back-office
 
-## Backoffice
-
-Ce module n'ajoute **aucun outil de backoffice** (pas d'entrée toolstree / `melisKey`). Sa seule
-surface backoffice est l'assistant de **mise en place du site** utilisé par la marketplace /
-l'installeur : contrôleurs `MelisDemoCms\Controller\MelisSetup`, `…\MelisSetupPostDownload` et
-`…\MelisSetupPostUpdate` (routés sous `/MelisDemoCms/setup` et `/melis/MelisDemoCms/...`), ainsi que
-les aides de vue de formulaire `DemoSiteFieldRow` / `DemoSiteFieldCollection` qui rendent le
-formulaire d'installation. La configuration de setup se trouve dans
-`config/setup/download.config.php` et `config/setup/update.config.php`.
+Ce module n'ajoute aucune entrée dans l'arbre des outils du back-office. Sa seule surface
+back-office est l'**assistant de mise en place du site** utilisé par la marketplace / l'installeur :
+contrôleurs `MelisDemoCms\Controller\MelisSetupController` (route `/MelisDemoCms/setup`),
+`MelisSetupPostDownloadController` et `MelisSetupPostUpdateController`. La configuration de setup
+se trouve dans `config/setup/download.config.php` et `config/setup/update.config.php`.
 
 ## Front office
 
-Le site est piloté par de simples contrôleurs de site MelisFront (étendant
-`MelisFront\Controller\MelisSiteActionController` via le `BaseController` local), un par type de
-page :
+Le site est piloté par de simples contrôleurs de site MelisFront, un par type de page :
 
-| Contrôleur (invokable) | Page |
+| Contrôleur | Page |
 | --- | --- |
 | `MelisDemoCms\Controller\Home` | Accueil (carrousel + slider secondaire, témoignages, bannière RGPD) |
 | `MelisDemoCms\Controller\News` | Liste / détail des actualités |
 | `MelisDemoCms\Controller\Team` | Équipe |
-| `MelisDemoCms\Controller\Services` | Services |
-| `MelisDemoCms\Controller\Faq` | Liste & détail des FAQ |
-| `MelisDemoCms\Controller\Contact` | Contact (formulaire prospects) |
-| `MelisDemoCms\Controller\Testimonial` / `…\Template` / `…\DragDrop` | Témoignages / démos de gabarit / zones de drag-drop |
-| `MelisDemoCms\Controller\Page404` | 404 |
+| `MelisDemoCms\Controller\Services` | Liste / détail des services |
+| `MelisDemoCms\Controller\Faq` | Liste FAQ et blocs par catégorie |
+| `MelisDemoCms\Controller\Contact` | Contact / formulaire prospects |
+| `MelisDemoCms\Controller\Testimonial` | Témoignages |
+| `MelisDemoCms\Controller\Template` | Démos de gabarits (statique / drag-drop / mixte) |
+| `MelisDemoCms\Controller\Page404` | Page d'erreur 404 |
 
-Plutôt que de livrer ses propres plugins, `MelisDemoCms` **fournit des gabarits front**
-(`view/plugins/*.phtml`) aux [plugins de templating](/fr/guide/plugins) existants de la plateforme,
-câblés dans `config/melis.plugins.config.php` :
+Plutôt que de livrer ses propres plugins, `MelisDemoCms` fournit des **gabarits de plugins**
+(`view/plugins/*.phtml`) câblés dans `config/melis.plugins.config.php` :
 
 | Plugin de templating (module propriétaire) | Gabarits fournis |
 | --- | --- |
@@ -82,55 +75,76 @@ câblés dans `config/melis.plugins.config.php` :
 | `MelisCmsNewsListNewsPlugin` / `…ShowNewsPlugin` / `…LatestNewsPlugin` (MelisCmsNews) | `news-list`, `news-details`, `latest-news-vertical`, `latest-news-horizontal` |
 | `MelisCmsProspectsShowFormPlugin` (MelisCmsProspects) | `prospect-form` |
 
-Deux listeners personnalisent le rendu :
-`SiteMenuCustomizationListener` s'attache à `MelisFrontMenuPlugin_melistemplating_plugin_end` pour
-reconstruire le menu via `DemoCmsService::customizeSiteMenu()`, et `LatestNewsHorizontalListener`
-ajuste le bloc des dernières actualités. `MelisDemoCmsCreateConfigListener` écoute
-`melis_marketplace_site_install_results` pour générer le `MelisDemoCms.config.php` du site à partir
-du `.config.stub` après l'installation.
+### Les trois techniques de composition
+
+| Technique | Fonctionnement | Pages concernées |
+| --- | --- | --- |
+| **Placement manuel** | Le plugin est instancié dans le contrôleur, rendu avec des paramètres et ajouté comme enfant de la vue — la vue l'affiche avec `echo`. | Accueil, Équipe (slider), Actualités, FAQ, Contact |
+| **Zone de drag-and-drop** | Le `.phtml` déclare une zone nommée ; l'éditeur back-office y dépose n'importe quel plugin sans aucun code contrôleur. | Démos DragDrop, Template |
+| **Balises éditables en ligne** | `MelisTag` encapsule une valeur par défaut dans la vue ; l'utilisateur back-office modifie le texte / les images directement en place. | Services, Témoignages, 404 |
+
+### Listeners
+
+`SetupDemoCmsListener` pilote le processus d'installation du site.
+`MelisDemoCmsCreateConfigListener` génère `MelisDemoCms.config.php` à partir du `.config.stub` après
+une installation via la marketplace. `SiteMenuCustomizationListener` personnalise le menu front.
+`LatestNewsHorizontalListener` ajuste la sortie du plugin de dernières actualités.
 
 ## Base de données
 
-`MelisDemoCms` ne définit aucune table `melis_*` propre. Son `MelisPlatformTable` lit la table
-centrale `melis_core_platform`. Le **contenu** de la démo (pages, gabarits, sliders, actualités,
-configuration prospects et clés de config par site) est créé à l'installation par le processus
-d'installation de site de la marketplace (`SetupDemoCmsListener` sur
-`melis_install_last_process_start`), à partir de la config par site de
-`config/MelisDemoCms.config.php` (p. ex. `home_page_id`, `news_page_id`, `home_page_slider_1_id`).
+`MelisDemoCms` ne définit aucune table `melis_*` propre. `MelisPlatformTable` lit la table centrale
+`melis_core_platform`. Tout le contenu de la démo (pages, gabarits, sliders, actualités, clés de
+config) est créé à l'installation par les listeners de setup, à partir des valeurs de
+`config/MelisDemoCms.config.php` telles que `home_page_id`, `news_page_id` et
+`home_page_slider_1_id`.
 
 ## Exemple
 
-Un contrôleur front rend un plugin de templating en lui passant un chemin de gabarit et les valeurs
-de config de la page — le motif utilisé partout dans le site (`HomeController`) :
+Un contrôleur front rend un plugin de templating en lui injectant un chemin de gabarit propre au
+site et un identifiant issu de la config — le motif utilisé partout dans le site (`HomeController`) :
 
 ```php
-$siteConfigSrv = $this->getServiceManager()->get('MelisSiteConfigService');
+$cfg = $this->getServiceManager()->get('MelisSiteConfigService');
 
-$sliderPlugin = $this->MelisCmsSliderShowSliderPlugin();
-$homeSlider1 = $sliderPlugin->render([
+$slider = $this->MelisCmsSliderShowSliderPlugin();
+$homeSlider1 = $slider->render([
     'template_path' => 'MelisDemoCms/plugins/home-carousel-slider',
     'id'            => 'homeSlider1',
     'pageId'        => $this->idPage,
-    'sliderId'      => $siteConfigSrv->getSiteConfigByKey('home_page_slider_1_id', $this->idPage),
+    'sliderId'      => $cfg->getSiteConfigByKey('home_page_slider_1_id', $this->idPage),
 ]);
 $this->view->addChild($homeSlider1, 'homeSlider1');
+// vue : <?= $this->homeSlider1 ?>
+```
+
+Une zone de drag-and-drop ne nécessite qu'un seul appel dans la vue — aucun code contrôleur :
+
+```php
+<?= $this->MelisDragDropZone($this->idPage, 'dragdropzone_home_1') ?>
+```
+
+Une balise éditable en ligne avec une valeur par défaut :
+
+```php
+<?= $this->MelisTag($this->idPage, 'static-html-1', 'html', '<h1>Accessible…</h1>') ?>
 ```
 
 ## Fichiers clés
 
-| Sujet | Chemin (sous `vendor/melisplatform/melis-demo-cms/`) |
+| Élément | Chemin (sous `vendor/melisplatform/melis-demo-cms/`) |
 | --- | --- |
-| Routes, contrôleurs, services, mapping de gabarits | `config/module.config.php` |
-| Câblage gabarit ↔ plugin | `config/melis.plugins.config.php` |
-| Clés de config par site (ids de page/slider) | `config/MelisDemoCms.config.php`, `config/MelisDemoCms.config.stub` |
+| Routes, contrôleurs, mapping de gabarits | `config/module.config.php` |
 | Modules chargés avec le site | `config/module.load.php` |
-| Formulaires / flux de setup du site | `config/setup/download.config.php`, `config/setup/update.config.php` |
-| Bootstrap & attache des listeners | `src/Module.php` |
+| Câblage des gabarits de plugins | `config/melis.plugins.config.php` |
+| Clés de config par site (IDs de page / slider / dossier) | `config/MelisDemoCms.config.php`, `…config.stub` |
+| Flux de setup du site | `config/setup/download.config.php`, `config/setup/update.config.php` |
+| Bootstrap et enregistrement des listeners | `src/Module.php` |
 | Service d'aide du site | `src/Service/DemoCmsService.php` |
-| Contrôleur de base front | `src/Controller/BaseController.php` |
-| Listeners menu / actualités / installation | `src/Listener/` |
-| Gabarits des plugins front | `view/plugins/*.phtml` |
-| Gabarits de page | `view/melis-demo-cms/*/*.phtml` |
+| Contrôleurs de setup et post-installation | `src/Controller/MelisSetupController.php`, `…PostDownloadController.php`, `…PostUpdateController.php` |
+| Listeners d'installation / menu / actualités | `src/Listener/` |
+| Gabarits de plugins | `view/plugins/*.phtml` |
+| Gabarits de pages | `view/melis-demo-cms/*/*.phtml` |
+| Démos de gabarits | `view/melis-demo-cms/template/` |
 
 Voir aussi : [Référence des modules](/fr/reference/modules), [Construire un site](/fr/guide/build-a-site),
 [Plugins](/fr/guide/plugins).

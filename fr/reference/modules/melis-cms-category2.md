@@ -2,117 +2,130 @@
 
 > Catégories de contenu multi-sites et multilingues pour le CMS — paquet `melisplatform/melis-cms-category2`.
 
-## Objectif
+## Présentation
 
-MelisCmsCategory2 ajoute un système de catégories hiérarchique au backoffice Melis. Les catégories
-forment un arbre (chaque ligne pointe vers un parent), portent des traductions par langue (nom +
-description), peuvent être rattachées à un ou plusieurs sites, disposent d'une période de validité
-et d'un statut, et peuvent contenir des fichiers médias. Le module fournit aussi un plugin de
-templating front-office pour afficher un arbre de catégories dans une page, ainsi qu'un listener qui
-alimente les catégories dans le plugin de liste de news de MelisCmsNews. C'est la base pour
-catégoriser du contenu (notamment les news) par catégorie, à travers les sites et les langues.
+MelisCmsCategory2 fournit un système de catégories hiérarchique dans le backoffice Melis. Les catégories forment
+un arbre (chaque nœud pointe vers un parent), portent des traductions par langue (nom et description), peuvent
+être associées à un ou plusieurs sites, disposent d'une période de validité et d'un statut, et peuvent contenir
+des fichiers médias. Le module embarque un plugin de templating front-office pour afficher un arbre de catégories
+dans une page, ainsi qu'un sélecteur de catégorie réutilisable intégré par d'autres modules (par ex. News,
+Commerce) pour classer leurs enregistrements.
 
 ## Activation
 
-C'est un module Laminas standard, déclaré dans `config/melis.module.load.php` (entrée
-`'MelisCmsCategory2'`). Il dépend de `melis-core` et `melis-cms` (selon `composer.json`), et en
-pratique de `melis-engine` pour le rendu front. Le module est compatible `dbdeploy`, ses tables sont
-donc créées au déploiement. Voir [Référence des modules](/fr/reference/modules) et
-[Construire un site](/fr/guide/build-a-site).
+Ajouter dans `config/melis.module.load.php` :
+
+```php
+return [
+    'MelisCmsCategory2',
+];
+```
+
+Nécessite `melis-core` et `melis-cms` (`^5.2`). Le module est compatible `dbdeploy`, ses tables sont donc
+créées au déploiement. `melis-engine` est également requis pour le rendu front.
 
 ## Services principaux
 
-Déclarés comme alias du service manager dans `config/module.config.php` :
-
 | Alias de service | Rôle |
 | --- | --- |
-| `MelisCmsCategory2Service` | Service principal des catégories (`Service\MelisCmsCategoryService`) : créer/lire les catégories, l'arbre et les traductions. |
-| `MelisCmsCategory2MediaService` | Service média (`Service\MelisCmsCategoryMediaService`) : stockage des fichiers par catégorie sur le disque + en base. |
+| `MelisCmsCategory2Service` | Service principal des catégories : créer/lire les nœuds, récupérer l'arbre, gérer les traductions et les liens de site. |
+| `MelisCmsCategory2MediaService` | Stockage des fichiers par catégorie sur le disque et en base de données. |
 
 Méthodes notables de `MelisCmsCategory2Service` :
 
-- `saveCategory($parentId, $status, $currentUserId, $validDateStart, $validDateEnd, $categoryId, $postValues)` — crée/met à jour une catégorie (déclenche les événements `melis_cms_category_save_category2_start`).
-- `saveCategoryTexts($categoryId, $catLangId, $postData, $id = null)` — enregistre une ligne de traduction.
-- `saveCategorySites($categoryId, $siteId, $id = null, $tobeDeleted = false)` — lie/délie une catégorie à un site.
-- `getCategoryById($categoryId, $langId = null, $onlyValid = false)`, `getCategoryDataById($categoryId)`, `getCategoryNameById(...)`, `getCategoryTranslationById(...)`.
-- `getCategoryTreeview($fatherId = null, $langId = null, $onlyValid = false, $siteId = null)` — l'arbre récursif.
-- `getFirstLevelCategoriesPerSite($siteId, $langId = 1)`, `getCategoriesPerSite($siteId, $langId = 1)`, `returnCategoryBasedFromSiteId(...)`.
-- `reOrderCategories($parentId, $currentOrder)`, `validateDates($dateStart, $dateEnd)`.
-- `getCategoryNewsList(...)` — utilisé par l'intégration avec la liste de news.
+- `getCategoryTreeview($fatherId, $langId, $onlyValid, $siteId)` — arbre récursif.
+- `getCategoryById($categoryId, $langId, $onlyValid)` — nœud de catégorie complet.
+- `getCategoryNameById($categoryId, $langId)` — recherche du nom.
+- `getCategoryListByIdRecursive(...)` — liste récursive à plat.
+- `getCategoryTranslationById(...)` — ligne de traduction unique.
+- `getFirstLevelCategoriesPerSite($siteId, $langId)`, `getCategoriesPerSite($siteId, $langId)`.
+- `getCategoryMediaById(...)` — lignes de médias pour un nœud.
+- `saveCategory(...)` — créer ou mettre à jour un nœud.
+- `saveCategoryTexts($categoryId, $catLangId, $postData, $id)` — enregistrer une ligne de traduction.
+- `saveCategorySites($categoryId, $siteId, $id, $toDelete)` — lier ou délier un site.
+- `reOrderCategories($parentId, $currentOrder)` — persister le glisser-déposer pour réordonner.
+- `validateDates($dateStart, $dateEnd)`.
 
-`MelisCmsCategory2MediaService` gère la partie fichiers : `getMediaFilesByCategoryId($categoryId, $fileType = 'file')`, `uploadFile(...)`, `deleteFile(...)`, `removeCategoryDir($categoryId)`, ainsi que des utilitaires de répertoire.
+`MelisCmsCategory2MediaService` gère la partie système de fichiers : `uploadFile`, `deleteFile`,
+`getMediaFilesByCategoryId`, `getFilesInDir`, `removeCategoryDir`.
 
-## Backoffice
+## Back-office
 
-L'outil est monté sous l'arbre des outils CMS (`config/app.interface.php`). L'entrée racine de
-melisKey `melis_cms_category_v2` ouvre l'outil `melis_cms_categories_v2`, qui forward vers le module
-`MelisCmsCategory2`, contrôleur `MelisCmsCategoryList`, action `render-categories-page`.
-Contrôleurs :
+Le gestionnaire de catégories est accessible depuis la section des outils CMS du menu gauche du back-office
+(icône `fa-th-list`). Il affiche les catalogues sous forme d'accordéon, chacun contenant son jsTree de
+catégories, avec une barre de recherche et un filtre par site. Contrôleurs :
 
-| Contrôleur | Usage |
+| Contrôleur | Utilisation |
 | --- | --- |
-| `MelisCmsCategoryListController` | Liste des catégories, vue en arbre, filtre par site, recherche. |
-| `MelisCmsCategoryController` | Le formulaire d'édition (statut, traductions, dates de validité, sites). |
-| `MelisCmsCategoryMediaController` | L'onglet Média et la mini médiathèque. |
-| `MelisCmsCategorySelectController` | La modale « sélectionner une catégorie dans un arbre » (réutilisée par les plugins). |
+| `MelisCmsCategoryListController` | Liste des catégories, vue en arbre, filtre par site, recherche, ajout de catalogue/catégorie. |
+| `MelisCmsCategoryController` | Le formulaire d'édition de catégorie (traductions, statut, dates de validité, sites). |
+| `MelisCmsCategoryMediaController` | L'onglet Média — parcourir, téléverser, supprimer les médias d'une catégorie. |
+| `MelisCmsCategorySelectController` | La modale de sélection de catégorie, réutilisée par d'autres modules. |
 
-L'interface liste/édition est construite à partir des melisKeys `interface` imbriqués (p. ex.
-`melis_cms_categories_v2_list`, `meliscategory_categories_category`,
-`meliscategory_category_tab_media`), et l'élément de formulaire `MelisCmsCategorySelect` (factory
-`MelisCmsCategorySelectFactory`) est utilisé par d'autres modules pour choisir une catégorie.
-L'interface en arbre utilise les assets jsTree livrés dans `public/`. Voir
-[Créer un outil](/fr/guide/create-a-tool).
+L'élément de formulaire `MelisCmsCategorySelect` (factory `MelisCmsCategorySelectFactory`) permet à tout
+module d'intégrer un sélecteur de catégorie dans ses propres formulaires.
 
-## Front-office
+## Front office
 
-- **Plugin de templating** `MelisCmsCategoryDisplayCategoriesPlugin` (invokable `controller_plugins` ;
-  config dans `config/plugins/MelisCmsCategoryDisplayCategoriesPlugin.config.php`, clé de config
-  `meliscmscategory2`). Il affiche un arbre de catégories dans une page. Son `front()` lit
-  `category_start`, `site_id` et la langue courante du plugin, puis appelle `getCategoryTreeview()` /
-  `returnCategoryBasedFromSiteId()` et passe `cmsCategoryTreeData` à la vue. Le formulaire d'édition
-  en backoffice expose un sélecteur de template, un sélecteur de catégorie de départ
-  (`MelisCmsCategorySelect`) et un sélecteur de site. Voir [Plugins](/fr/guide/plugins).
-- **Aide de vue** `renderTreeRec` (`View\Helper\RenderRecTreeHelper`) — affiche récursivement un
-  tableau d'arbre de catégories dans une vue.
-- **Listener** `MelisCmsCategoryNewsListListener` — s'attache à l'événement partagé
-  `meliscmsnews_list` ; lorsqu'un plugin de liste de news porte un `categoryIdNews`, il injecte les
-  news correspondantes dans `newsList` via `getCategoryNewsList()`. Un second listener,
-  `MelisCmsCategory2FlashMessengerListener`, ne s'exécute qu'au rendu backoffice.
+- **Plugin de templating** `MelisCmsCategoryDisplayCategoriesPlugin` — affiche un arbre de catégories dans une
+  page. La configuration (`config/plugins/MelisCmsCategoryDisplayCategoriesPlugin.config.php`) expose
+  un onglet Propriétés avec trois champs : `template_path`, `site_id`, `category_start`. Template par défaut :
+  `MelisCmsCategory2/default` (`view/.../plugins/default.phtml`).
+- **Aide de vue** `renderTreeRec` — affiche récursivement un tableau d'arbre de catégories dans une vue.
+
+Utilisation directe dans le code :
+
+```php
+$display = $this->MelisCmsCategoryDisplayCategoriesPlugin();
+echo $display->render([
+    'template_path' => ['MelisCmsCategory2/default'],
+    'site_id'        => 1,
+    'category_start' => 1,
+]);
+```
 
 ## Tables de base de données
 
 | Table | Contenu |
 | --- | --- |
-| `melis_cms_category2` | Le nœud de catégorie : `cat2_id`, `cat2_father_cat_id`, `cat2_order`, `cat2_status`, `cat2_reference`, `cat2_date_valid_start/end`, audit création/édition. |
-| `melis_cms_category2_trans` | Traduction par langue : `catt2_category_id`, `catt2_lang_id`, `catt2_name`, `catt2_description`. |
-| `melis_cms_category2_sites` | Lien catégorie-site : `cats2_cat2_id`, `cats2_site_id`. |
-| `melis_cms_category2_media` | Média rattaché à une catégorie : `catm2_cat_id`, `catm2_type`, `catm2_path`. |
+| `melis_cms_category2` | Nœud de catégorie : `cat2_id`, `cat2_father_cat_id`, ordre, statut, référence, dates de validité, audit. |
+| `melis_cms_category2_trans` | Traduction par langue : nom et description, indexée par `catt2_id`. |
+| `melis_cms_category2_sites` | Lien catégorie-site, indexé par `cats2_id`. |
+| `melis_cms_category2_media` | Média attaché à une catégorie : `catm2_type`, `catm2_path`, `catm2_cat_id`. |
+
+Un nœud racine de départ (`cat2_id = 1`, "My catalog" / "Mon catalogue") est inséré à l'installation.
 
 ## Exemple
 
-Récupérer l'arbre des catégories pour un site et une langue depuis n'importe quel contrôleur/service :
+Récupérer et afficher l'arbre de catégories depuis n'importe quel contrôleur ou service :
 
 ```php
-$catSvc = $this->getServiceManager()->get('MelisCmsCategory2Service');
+$cat = $this->getServiceManager()->get('MelisCmsCategory2Service');
 
-// Arbre récursif, catégories valides uniquement, limité à un site
-$tree = $catSvc->getCategoryTreeview(null, $langId, true, $siteId);
+// Recursive tree — valid categories only, scoped to a site
+$tree = $cat->getCategoryTreeview($fatherId, $langId, true, $siteId);
 
-// L'afficher récursivement dans une vue
-echo $this->renderTreeRec($tree);
+// Single node with translations
+$node = $cat->getCategoryById($categoryId, $langId, false);
+
+// Name lookup
+$name = $cat->getCategoryNameById($categoryId, $langId);
+
+// All categories for a site
+$site = $cat->getCategoriesPerSite($siteId, $langId);
 ```
 
 ## Fichiers clés
 
-| Sujet | Chemin |
+| Élément | Chemin |
 | --- | --- |
 | Config du module (services, contrôleurs, plugin, aide de vue) | `vendor/melisplatform/melis-cms-category2/config/module.config.php` |
-| Arbre des outils / interfaces backoffice | `vendor/melisplatform/melis-cms-category2/config/app.interface.php` |
+| Arbre des outils / interfaces back-office | `vendor/melisplatform/melis-cms-category2/config/app.interface.php` |
 | Service principal | `vendor/melisplatform/melis-cms-category2/src/Service/MelisCmsCategoryService.php` |
 | Service média | `vendor/melisplatform/melis-cms-category2/src/Service/MelisCmsCategoryMediaService.php` |
+| Factory de l'élément de formulaire sélecteur de catégorie | `vendor/melisplatform/melis-cms-category2/src/Form/Factory/MelisCmsCategorySelectFactory.php` |
 | Plugin de templating | `vendor/melisplatform/melis-cms-category2/src/Controller/Plugin/MelisCmsCategoryDisplayCategoriesPlugin.php` |
 | Config du plugin | `vendor/melisplatform/melis-cms-category2/config/plugins/MelisCmsCategoryDisplayCategoriesPlugin.config.php` |
-| Aide de vue | `vendor/melisplatform/melis-cms-category2/src/View/Helper/RenderRecTreeHelper.php` |
-| Listener liste de news | `vendor/melisplatform/melis-cms-category2/src/Listener/MelisCmsCategoryNewsListListener.php` |
-| Bootstrap du module | `vendor/melisplatform/melis-cms-category2/src/Module.php` |
-| SQL d'installation | `vendor/melisplatform/melis-cms-category2/install/sql/setup_structure.sql` |
+| SQL d'installation | `vendor/melisplatform/melis-cms-category2/install/sql/` |
+
+Voir aussi : [melis-cms](/fr/reference/modules/melis-cms), [melis-core](/fr/reference/modules/melis-core), [melis-cms-news](/fr/reference/modules/melis-cms-news)

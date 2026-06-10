@@ -1,21 +1,21 @@
 # MelisCore
 
-> The platform core: backoffice shell, config tree, auth, rights, users, logs, events and the
-> service layer every other module builds on. Package `melisplatform/melis-core`.
+> The backoffice foundation every other module builds on: login, users/roles/rights, the menu &
+> tool (DataTable) framework, dashboard, config, email, GDPR, and the base service + event system.
+> Package `melisplatform/melis-core`.
 
 ## Purpose
 
-`MelisCore` is the foundation module of Melis Platform. It provides the backoffice application
-shell, the `MelisCoreConfig` configuration tree that aggregates every module's `app.*.php` files,
-authentication and per-tool rights, user management, the logging subsystem, the dashboard
-(widgets), platform/environment handling, GDPR auto-delete, a micro-service auth endpoint, and the
-shared service/view-helper layer that the rest of the modules consume. Almost every other
-`melisplatform/*` module depends on it.
+`MelisCore` is the backoffice heart of Melis Platform. It provides the application shell (header,
+left menu, tools tree, dashboard, footer), the `MelisCoreConfig` configuration tree that
+aggregates every module's `app.*.php` files, authentication and per-tool rights, user management,
+platform/environment handling, transactional emails, GDPR tooling, a micro-service auth endpoint,
+and the shared service/event layer that every other module extends. Every `melisplatform/*` module
+depends on it.
 
 ## Enable it
 
-`MelisCore` is a standard Laminas module. It is loaded by the skeleton's
-`config/melis.module.load.php`:
+Add to `config/modules.config.php`:
 
 ```php
 return [
@@ -24,10 +24,9 @@ return [
 ];
 ```
 
-It must load early — most modules call its services. Its own composer requirements pull in
-[`melis-asset-manager`](/reference/modules), `melis-composerdeploy` and `melis-dbdeploy`, and it
-auto-loads the Laminas components it needs (`Laminas\I18n`, `Laminas\Router`, `Laminas\Form`,
-`Laminas\Db`, `Laminas\Cache`, …) via its `config/module.load.php`.
+It must load early — most other modules call its services. Its companion infrastructure modules are
+[MelisAssetManager](/reference/modules), [MelisDbDeploy](/reference/modules),
+[MelisComposerDeploy](/reference/modules) and [MelisInstaller](/reference/modules).
 
 ## Key services
 
@@ -36,113 +35,132 @@ Registered as `service_manager` aliases in
 
 | Service alias | Role |
 | --- | --- |
-| `MelisCoreConfig` | The config tree. Reads any aggregated `app.*` config by path with `getItem('meliscore/datas/…')`; `getMelisKeys()` / `getMelisKeyData()` resolve `melisKey`s; `getItemPerPlatform()`, `getFormMergedAndOrdered()`. |
-| `MelisCoreAuth` | Backoffice authentication. `getAuthRights()` returns the logged-in user's rights XML. |
-| `MelisCoreRights` | Per-tool access control. `isAccessible($xmlRights, $sectionId, $itemId)`, `getRightsValues($userId)`, `createXmlRightsValues($userId, $datas)`. |
-| `MelisCoreUser` | User helpers: `getUserXmlRights()`, `isItemRightChecked()`, `getUserConnectionData()`, `getUserLastLoggedInDate()`. |
-| `MelisCoreDispatch` | Front/back plugin dispatch glue: `dispatchPluginAction($e, $nameContainer, $nameVarSession, $controller, $vars)`. |
-| `MelisCoreTool` | The backoffice tool helper used by tool controllers (columns, forms, modals, DataTable config, CSV export). See [Create a tool](/guide/create-a-tool). |
-| `MelisCoreLogService` | Activity log: `logAction()`, `saveLog()`, `getLogList()`, `getLogType()`, log-type translations. |
-| `MelisCoreDashboardService` | Builds the backoffice dashboard from its registered plugins. |
-| `MelisCoreTranslation` | Loads/merges module translations. |
-| `MelisCoreFlashMessenger` | Cross-request flash messages. |
-| `MelisCoreImage` | Image manipulation helper. |
-| `MelisCoreLostPassword` / `MelisCoreCreatePassword` / `MelisPasswordSettingsService` | Lost-password flow, account creation links and password policy/history. |
-| `MelisCoreEmailSendingService` / `MelisCoreBOEmailService` | Backoffice email templates and sending. |
-| `ModulesService` (`MelisCoreModulesService`) | Lists/activates/deactivates platform modules. |
-| `MelisCorePlatformSchemeService` | Platform (environment) scheme handling. |
-| `MelisCoreGdprService` / `MelisCoreGdprAutoDeleteService` | GDPR data handling and scheduled auto-delete. |
-| `MelisCorePluginsService` / `MelisCoreDashboardPluginsService` | Plugin and dashboard-plugin registration & rights. |
-| `MelisCoreCacheSystemService` | Cache read/write helpers. |
-| `MelisCoreAnnouncementService` | Backoffice announcements: `getLists()`, `saveAnnouncement()`, `deleteAnnouncement()`. |
-| `MelisGeneralService` / `MelisCoreFormService` | General utilities and form building/merging. |
-
-An abstract factory (`MelisCore\Factory\MelisAbstractFactory`) and per-table aliases
-(`MelisCoreTableUser`, `MelisCoreTableLog`, …) are also registered.
+| `MelisCoreConfig` | Runtime config tree. Reads any aggregated `app.*` config by path: `getItem('/meliscore/interface/…')`, `getItemPerPlatform('/meliscore/datas/')`, `getFormMergedAndOrdered(…)`, `setFormFieldRequired(…)`. |
+| `MelisCoreAuth` | Backoffice authentication (extends Laminas auth). `hasIdentity()`, `getIdentity()` (the `melis_core_user` row), `getAuthRights()` (rights XML), `encryptPassword()`, `isPasswordCorrect()`. |
+| `MelisCoreRights` | Per-tool access control. `canAccess($melisKey)`, `isAccessible($xmlRights, $sectionId, $itemId)`, `getRightsValues($id, $isRole)`, `createXmlRightsValues(…)`, `getToolSectionMap()`. |
+| `MelisCoreTool` | Backoffice tool helper for controllers. `setMelisToolKey($plugin, $toolKey)`, `getColumns()`, `getForm($formKey)`, `getDataTableConfiguration(…)`, `getSearchableColumns()`. |
+| `MelisCoreDispatch` | Chains controller dispatches, accumulating `[success, errors, datas]` for multi-step saves. |
+| `MelisCoreTranslation` | Loads and merges `tr_*` interface/form translations per locale. |
+| `MelisCoreBOEmailService` | Backoffice email templates: `sendBoEmailByCode($code, $tags, $toEmail, $toName, $langId)`, `getBoEmailByCode()`, `saveBoEmailByCode()`, `deleteEmail()`. |
+| `MelisCoreEmailSendingService` | Low-level email sender: `sendEmail($fromEmail, $fromName, $toEmail, $toName, $replyTo, $subject, $htmlBody, $textBody, $transportConfig)`. |
+| `MelisCoreGdprService` | GDPR subject access/erasure (broadcasts events): `getUserInfo()`, `extractSelected()`, `deleteSelected()`. |
+| `MelisCoreGdprAutoDeleteService` | Scheduled data-retention engine: `run()`, `getFirstAlertUsers()`, `getSecondAlertUsers()`, `getSmtpConfigData()`. |
+| `MelisGeneralService` | Base class most platform services extend — provides `makeArrayFromParameters()`, `sendEvent()`, `getServiceManager()`. |
 
 ## Backoffice
 
-`MelisCore` injects the top **System** section of the backoffice tool tree
-(`config/app.toolstree.php`, section `melisKey` `meliscore_toolstree_section`), including:
+`MelisCore` delivers the entire backoffice shell and the *System Configuration* section of the
+tools tree, plus:
 
-| Tool (melisKey) | Controller | Purpose |
-| --- | --- | --- |
-| `meliscore_tool_system_config` | `MelisCore\Controller\MelisCoreOtherConfig` | System configuration. |
-| `meliscore_tool_user_module_management` | `MelisCore\Controller\Modules` | Activate/deactivate & reorder modules. |
-| `meliscore_tool_platform` | `MelisCore\Controller\Platforms` | Declare platforms/environments (local, pre-prod, prod). |
-| `meliscore_tool_emails_mngt` | `MelisCore\Controller\EmailsManagement` | Backoffice email template management. |
-| `meliscore_tool_phpunit` | `MelisCore\Controller\MelisPhpUnitTool` | Run module test suites. |
-
-User management is delivered through `MelisCore\Controller\User` / `ToolUser` (the Users tool),
-and GDPR auto-delete through `MelisCore\Controller\MelisCoreGdprAutoDelete*`. The dashboard is
-served by `MelisCore\Controller\Dashboard` / `DashboardPlugins`.
-
-### Dashboard plugins
-
-`MelisCore` ships the dashboard (backoffice widget) framework and several built-in widgets, each
-with a config file under `config/dashboard-plugins/`:
-
-`MelisCoreDashboardAnnouncementPlugin`, `MelisCoreDashboardBubbleNewsMelisPlugin`,
-`MelisCoreDashboardBubbleUpdatesPlugin`, `MelisCoreDashboardBubbleNotificationsPlugin`,
-`MelisCoreDashboardBubbleChatPlugin`, `MelisCoreDashboardRecentUserActivityPlugin`.
-
-`MelisCoreDashboardTemplatingPlugin` is the base class every backoffice widget extends — see
-[Plugins: templating & dashboard](/guide/plugins).
-
-## Front office
-
-`MelisCore` is a backoffice/platform module, but it registers shared **view helpers** (in
-`config/module.config.php` under `view_helpers`) used across both offices:
-
-| View helper | Role |
+| Tool (melisKey prefix) | Purpose |
 | --- | --- |
-| `MelisGenericTable` | Renders a generic data table. |
-| `MelisDataTable` | DataTables integration helper. |
-| `MelisModal` / `MelisModalInvoker` | Backoffice modal rendering/invocation. |
-| `MelisTextHelper` | Text formatting/escaping helper. |
-| `MelisCoreHeadPlugin` | Head-scripts/styles aggregation for the shell. |
-| `MelisDashboardDragDropZone` / `MelisCoreDashboardBubblePlugin` | Dashboard zone rendering. |
-| `getMelisSectionIcons` | Resolves tool-tree section icons. |
-| `MelisFieldCollection` / `MelisFieldRow` | Form rendering helpers. |
+| Users (`meliscore_tool_user`) | Create and edit backoffice users; assign roles and per-tool rights; view login history; generate API keys. |
+| Platforms | Declare environments (dev / staging / production) and set per-platform colour scheme. |
+| Languages | Manage backoffice locales. |
+| Emails management | Create/edit transactional email templates with per-language body and `[TAG]` placeholders. |
+| Logs | Searchable action log, filterable by type, user and date. |
+| Other config | Password/security policy: expiry, lock threshold, password history. |
+| GDPR | Search a person, view held data, anonymise, configure SMTP for GDPR notifications; separate cron-driven auto-delete engine. |
+| Modules / Marketplace | Install, update or remove modules and manage the production asset bundle. |
+| Announcements | Create backoffice announcements shown on the dashboard. |
 
-It also exposes a micro-service auth endpoint (routes `microservice` / `microservice_list`,
-controller `MelisCore\Controller\MelisCoreMicroService`) backed by `melis_core_microservice_auth`.
+### Interface tree (app.interface.php) — the backoffice backbone
+
+The entire backoffice — every tool, tab, modal, menu entry — is described as a single nested tree
+of **interface nodes**, deep-merged from every module's `config/app.interface.php`. Each node has:
+
+- **`conf`** — `melisKey` (unique, module-prefixed), DOM `id`, translation `name`, `icon`,
+  `rightsDisplay`.
+- **`forward`** — the controller action that renders the zone (`module`, `controller`, `action`,
+  optional `jscallback`).
+- **`interface`** — child nodes (recursive).
+
+`melisKey` is the stable identifier used for rights checks, zone reloads and DOM addressing.
+Rights are stored as an XML tree in `melis_core_user.usr_rights`; anything not granted is hidden.
+
+Top-level shell branches: `meliscore_header`, `meliscore_leftmenu`, `meliscore_center`,
+`meliscore_footer`, and `meliscore_toolstree_section` (the grouped tools tree).
+
+### Tool (DataTable) framework (app.tools.php)
+
+Every list tool is declared in a module's `config/app.tools.php` and rendered through
+`MelisCoreTool` + the `MelisDataTable` view helper. The declaration covers columns, filters,
+searchable fields, action buttons, modals and forms.
+
+### Event system
+
+`MelisGeneralService` fires `*_start` / `*_end` events around each service method, enabling any
+module to intercept. Hook via the shared event manager:
+
+```php
+$sm->get('SharedEventManager')->attach(
+    'MelisCore',
+    'meliscore_tooluser_savenew_end',
+    function ($e) { $p = $e->getParams(); /* react */ },
+    100
+);
+```
+
+Common core events: `meliscore_tooluser_savenew_start/end`, `…delete_start/end`, `…save_start/end`,
+`melis_core_check_user_rights`, `meliscore_install_create_new_user`, `melis_core_new_platform`, and
+the GDPR events (`melis_core_gdpr_user_info_event`, `…_extract_event`, `…_delete_event`,
+`melis_core_gdpr_auto_delete*`).
+
+### JS helpers
+
+Available globally as `melisHelper` (`public/js/core/melisHelper.js`):
+
+`zoneReload(melisKey, params)`, `createModal(zoneId, modalKey, …)`,
+`melisOkNotification(title, msg)` / `melisKoNotification(…)`,
+`tabOpen()` / `tabClose()` / `tabSwitch()`,
+`loadingZone(sel)` / `removeLoadingZone(sel)`,
+`melisTinyMCE.createTinyMCE('tool', sel, {})`.
 
 ## Database tables
 
-Created by `install/sql/setup_structure.sql` and the deltas in `install/dbdeploy/`:
-
 | Table | Holds |
 | --- | --- |
-| `melis_core_user` | Backoffice users. |
-| `melis_core_user_role` | User roles / rights XML. |
+| `melis_core_user` | Backoffice users (login, password hash, `usr_rights` XML, admin flag, lang, role). |
+| `melis_core_user_role` | Roles and their `urole_rights` XML. |
 | `melis_core_user_connection_date` | Login history. |
-| `melis_core_user_password_history` | Password reuse history (policy). |
-| `melis_core_lost_password` / `melis_core_create_password` | Password reset & account-creation tokens. |
 | `melis_core_lang` | Backoffice languages. |
-| `melis_core_log` / `melis_core_log_type` / `melis_core_log_type_trans` | Activity log + types & translations. |
-| `melis_core_platform` / `melis_core_platform_scheme` | Platforms (environments) and their schemes. |
-| `melis_core_dashboards` | Per-user dashboard layout. |
-| `melis_plugins` | Registered plugins. |
-| `melis_core_announcement` | Backoffice announcements. |
-| `melis_core_bo_emails` / `melis_core_bo_emails_details` | Backoffice email templates. |
-| `melis_core_microservice_auth` / `melis_core_microservice_logs` | Micro-service auth & call logs. |
-| `melis_core_gdpr_delete_config` / `…_emails` / `…_emails_sent` / `…_emails_logs` / `…_emails_smtp` | GDPR auto-delete configuration & mail tracking. |
+| `melis_core_platform` | Environments/platforms. |
+| `melis_core_bo_emails` / `_details` | Transactional email templates and per-language bodies. |
+| `melis_core_log` / `_log_type` / `_log_type_trans` | Action log, types and translations. |
+| `melis_core_lost_password` | Password reset tokens. |
+| `melis_core_user_connection_date` | Per-user login history. |
+| `melis_core_microservice_auth` | API keys for micro-service endpoints. |
+| `melis_core_dashboards` / `_dashboard_schema` | Per-user dashboard layout. |
+| `melis_core_plugins` | Registered plugins. |
+| `melis_core_gdpr_delete_config` / `_delete_emails_logs` | GDPR auto-delete rules and audit trail. |
+| `melis_user_password_history` | Password history (reuse prevention). |
+| `melis_announcement` | Backoffice announcements. |
 
 ## Example
 
-Read a config value, check a right and write a log entry from a controller:
+Send a backoffice email using the template system, check a right, and call a service method with
+the event pattern:
 
 ```php
-$config  = $this->getServiceManager()->get('MelisCoreConfig');
-$rights  = $this->getServiceManager()->get('MelisCoreRights');
-$auth    = $this->getServiceManager()->get('MelisCoreAuth');
-$logs    = $this->getServiceManager()->get('MelisCoreLogService');
+// Send a templated email (B7)
+$boEmail = $sm->get('MelisCoreBOEmailService');
+$boEmail->sendBoEmailByCode(
+    'MYMODULE_WELCOME',
+    ['USER_NAME' => 'John', 'SITE_NAME' => 'Acme'],
+    'john@doe.com',
+    'John Doe',
+    $langId
+);
 
-$xmlRights = $auth->getAuthRights();
-if ($rights->isAccessible($xmlRights, 'meliscore_toolstree_section', 'meliscore_tool_platform')) {
-    $logs->logAction(/* … */);
+// Check a right before acting (B0f)
+$rights = $sm->get('MelisCoreRights');
+if (! $rights->canAccess('melismymodule_tool')) {
+    // not allowed
 }
+
+// Read a per-platform config value (B0i)
+$config  = $sm->get('MelisCoreConfig');
+$merged  = $config->getItemPerPlatform('/meliscore/datas/');
 ```
 
 ## Key files
@@ -150,18 +168,16 @@ if ($rights->isAccessible($xmlRights, 'meliscore_toolstree_section', 'meliscore_
 | Concern | Path |
 | --- | --- |
 | Module bootstrap | `vendor/melisplatform/melis-core/src/Module.php` |
-| Main config (services, controllers, view helpers, routes) | `vendor/melisplatform/melis-core/config/module.config.php` |
-| Backoffice tool tree | `vendor/melisplatform/melis-core/config/app.toolstree.php` |
-| Interface / forms / emails config | `vendor/melisplatform/melis-core/config/app.interface.php`, `app.forms.php`, `app.emails.php` |
-| Dashboard plugin configs | `vendor/melisplatform/melis-core/config/dashboard-plugins/` |
-| Laminas components to load | `vendor/melisplatform/melis-core/config/module.load.php` |
+| Routes, services, controllers, view helpers | `vendor/melisplatform/melis-core/config/module.config.php` |
+| Backoffice shell & tools tree (interface) | `vendor/melisplatform/melis-core/config/app.interface.php` |
+| DataTable tool declarations | `vendor/melisplatform/melis-core/config/app.tools.php` |
+| Micro-service endpoints | `vendor/melisplatform/melis-core/config/app.microservice.php` |
 | Services | `vendor/melisplatform/melis-core/src/Service/` |
 | Controllers | `vendor/melisplatform/melis-core/src/Controller/` |
-| Dashboard plugins | `vendor/melisplatform/melis-core/src/Controller/DashboardPlugins/` |
 | Table gateways | `vendor/melisplatform/melis-core/src/Model/Tables/` |
-| View helpers | `vendor/melisplatform/melis-core/src/View/Helper/` |
-| Install SQL & deltas | `vendor/melisplatform/melis-core/install/sql/`, `install/dbdeploy/` |
+| Listeners | `vendor/melisplatform/melis-core/src/Listener/` |
+| Install SQL & migrations | `vendor/melisplatform/melis-core/install/` |
 | Translations | `vendor/melisplatform/melis-core/language/` |
 
-See also the [Module reference](/reference/modules), [Create a tool](/guide/create-a-tool) and
-[Plugins](/guide/plugins).
+See also: [Module reference](/reference/modules), [Create a tool](/guide/create-a-tool),
+[Plugins](/guide/plugins)

@@ -11,90 +11,101 @@ messages. It is a backoffice-only tool — there is no front-office component.
 
 ## Enable it
 
-MelisMessenger is a standard Laminas module. It ships enabled in the skeleton via
-`config/melis.module.load.php` (entry `'MelisMessenger'`). If you add it manually, append that
-entry to the load list, then deploy its database delta. It depends on `melis-core` (`^5.2`); the
-module category is `core` and `dbdeploy` is enabled, so its tables install through the dbdeploy
-mechanism. See the [Module reference](/reference/modules).
+Add to `config/melis.module.load.php`:
+
+```php
+return [
+    'MelisMessenger',
+];
+```
+
+Requires `melisplatform/melis-core` (`^5.2`). The module category is `core` with `dbdeploy`
+enabled, so its tables install through the dbdeploy mechanism.
 
 ## Key services
 
-Registered under `service_manager` aliases in `config/module.config.php`.
-
 | Alias | Role |
 | --- | --- |
-| `MelisMessengerService` | The public service for messaging. Send and read messages/conversations. |
-| `MelisMessengerMsgTable` | Table gateway for conversations (`melis_messenger_msg`). |
-| `MelisMessengerMsgContentTable` | Table gateway for message content (`melis_messenger_msg_content`). |
-| `MelisMessengerMsgMembersTable` | Table gateway for conversation members (`melis_messenger_msg_members`). |
+| `MelisMessengerService` | Public service for messaging: send and read messages/conversations. |
+| `MelisMessengerMsgTable` | Table gateway for `melis_messenger_msg`. |
+| `MelisMessengerMsgContentTable` | Table gateway for `melis_messenger_msg_content`. |
+| `MelisMessengerMsgMembersTable` | Table gateway for `melis_messenger_msg_members`. |
 
-`MelisMessengerService` (extends `MelisGeneralService`, so each method fires
-`melismessenger_*_start` / `_end` events) exposes:
+`MelisMessengerService` methods fire `melismessenger_*_start` / `*_end` events for each read/list
+call (e.g. `melismessenger_get_conversation_start` / `_end`):
 
 | Method | Role |
 | --- | --- |
-| `saveMsg($data)` | Create/save a conversation; returns the conversation id. |
-| `saveMsgMembers($data)` | Attach members (users) to a conversation. |
+| `saveMsg($data)` | Create/update a conversation; returns the conversation id. |
+| `saveMsgMembers($data)` | Attach a user to a conversation. |
 | `saveMsgContent($data)` | Save a message inside a conversation. |
 | `getConversation($id)` | Fetch a full conversation by id. |
-| `getConversationWithLimit($id, $limit = 10, $offset = 0)` | Paginated conversation fetch. |
-| `getNewMessage($id)` | Fetch new/unread messages. |
-| `updateMessageStatus($data, $msg_id, $user_id)` | Mark messages read/updated for a user. |
+| `getConversationWithLimit($id, $limit, $offset)` | Paginated conversation fetch. |
+| `getNewMessage($id)` | Fetch new/unread messages since the last poll. |
+| `updateMessageStatus($data, $msg_id, $user_id)` | Mark messages read for a user. |
 | `getContactList($convo_id, $user_id)` | Resolve the contacts of a conversation. |
-| `prepareConversationId($userId)` | List conversation ids a user belongs to (creator + member). |
-| `getUserRightsForMessenger()` | Check the current user's access right to `/melismessenger`. |
+| `prepareConversationId($userId)` | List conversation ids a user belongs to. |
+| `getUserRightsForMessenger()` | Check the current user's access rights to the module. |
 
 ## Backoffice
 
-The module surfaces in the backoffice through `config/app.tools.php` and `config/app.interface.php`:
+The module surfaces in the backoffice via `config/app.interface.php`:
 
-- A **Messenger tab** inside the user profile screen — declared as melisKey `melismessenger_tool`
-  (forwards to `MelisMessenger` controller, `render-messenger` action), with nested keys
-  `melismessenger_tool_content` (`render-messenger-tool-content`) and
-  `melismessenger_tool_contact` (`render-messenger-contact`).
-- A **header notification** widget — melisKey `melismessenger_tool_header_messages`, injected into
-  `meliscore_header`, forwarding to the `header-messenger` action.
-- The tool is registered under the `melistoolmessenger` interface plugin; messages auto-refresh on
-  the `msg_interval` defined in `app.interface.php` (default 60000 ms / 1 min).
+- A **Messenger tab** inside the user Profile screen — melisKey `melismessenger_tool` (icon
+  `comments`), injected under `meliscore_user_profile_tabs`.
+- A **header notification icon** — injected under `meliscore_header`, surfaces new/unread messages
+  from any backoffice screen.
+- The thread auto-refreshes every `msg_interval` milliseconds (default 60 000 ms).
 
-All actions live on `MelisMessenger\Controller\MelisMessengerController` (e.g.
-`createConversationAction`, `saveMessageAction`, `getConversationAction`, `getNewMessageAction`,
-`getContactListAction`, `updateMessageStatusAction`). `MelisSetupController` handles the standalone
-setup form. To build your own backoffice tools, see [Create a tool](/guide/create-a-tool).
+All actions live on `MelisMessenger\Controller\MelisMessengerController`:
 
-## Front office
+| Action | Purpose |
+| --- | --- |
+| `renderMessengerAction` | Render the Messenger profile tab. |
+| `renderMessengerToolContentAction` | Render the conversation thread content. |
+| `renderMessengerContactAction` | Render the contacts/recipient picker. |
+| `headerMessengerAction` | Render the header notification icon. |
+| `createConversationAction` | AJAX — create a conversation. |
+| `saveMessageAction` | AJAX — post a message. |
+| `getConversationAction` | AJAX — fetch a conversation. |
+| `getNewMessageAction` | AJAX — poll for new messages. |
+| `getLastMessageAction` | AJAX — fetch the last message. |
+| `updateMessageStatusAction` | AJAX — mark messages read. |
+| `getContactListAction` | AJAX — retrieve the contact list. |
+| `getMsgTimeIntervalAction` | AJAX — return the polling interval. |
+| `getUserRightsForMessengerAction` | AJAX — return the user's rights. |
 
-None. MelisMessenger does not ship templating plugins, view helpers or controller plugins — it is
-purely a backoffice messaging tool.
+The recipient picker uses the **tokenize2** library (`public/plugins/tokenize2.*`) via the
+`MelisMessengerInput` form element (a multi-recipient tokenize2 input).
 
 ## Database tables
 
-Installed by `install/dbdeploy/1112618_melis_messenger_install.sql`.
-
-| Table | Role |
+| Table | Holds |
 | --- | --- |
-| `melis_messenger_msg` | One row per conversation (`msgr_msg_id`, creator, creation date). |
-| `melis_messenger_msg_content` | The individual messages (sender, message text, date, status). |
-| `melis_messenger_msg_members` | Users participating in a conversation. |
+| `melis_messenger_msg` | One row per conversation (`msgr_msg_id`, `msgr_msg_creator_id`, `msgr_msg_date_created`). |
+| `melis_messenger_msg_members` | Users participating in a conversation (`msgr_msg_mbr_id`, `msgr_msg_id`, `msgr_msg_mbr_usr_id`). |
+| `melis_messenger_msg_content` | Individual messages (`msgr_msg_cont_id`, sender, message text, date, status). |
 
 ## Example
 
 ```php
-// In a backoffice controller (service available via the service manager)
 $messenger = $this->getServiceManager()->get('MelisMessengerService');
 
-// Start a conversation, attach members, then post a message
-$convoId = $messenger->saveMsg([
-    'msgr_msg_creator_id'  => $userId,
-    'msgr_msg_date_created' => date('Y-m-d H:i:s'),
-]);
-$messenger->saveMsgMembers(['msgr_msg_id' => $convoId, 'msgr_msg_mbr_usr_id' => $otherUserId]);
-$messenger->saveMsgContent([
-    'msgr_msg_id'             => $convoId,
-    'msgr_msg_cont_sender_id' => $userId,
-    'msgr_msg_cont_message'   => 'Hello!',
-    'msgr_msg_cont_date'      => date('Y-m-d H:i:s'),
-]);
+// Create a conversation, add a member, then post a message
+$convoId = $messenger->saveMsg($data);
+$messenger->saveMsgMembers(['msgr_msg_id' => $convoId, 'msgr_msg_mbr_usr_id' => $userId]);
+$messenger->saveMsgContent(['msgr_msg_id' => $convoId, 'msgr_msg_cont_message' => 'Hi']);
+
+// Read messages
+$thread = $messenger->getConversation($convoId);
+$page   = $messenger->getConversationWithLimit($convoId, 10, 0);
+$new    = $messenger->getNewMessage($convoId);
+
+// Mark read
+$messenger->updateMessageStatus($data, $msgId, $userId);
+
+// Contacts
+$contacts = $messenger->getContactList($convoId, $userId);
 ```
 
 ## Key files
@@ -102,10 +113,13 @@ $messenger->saveMsgContent([
 | Concern | Path |
 | --- | --- |
 | Module config (routes, services, controllers) | `vendor/melisplatform/melis-messenger/config/module.config.php` |
-| Backoffice tool declaration | `vendor/melisplatform/melis-messenger/config/app.tools.php` |
-| Interface (profile tab + header) | `vendor/melisplatform/melis-messenger/config/app.interface.php` |
+| Interface declaration (profile tab + header) | `vendor/melisplatform/melis-messenger/config/app.interface.php` |
+| Forms config | `vendor/melisplatform/melis-messenger/config/app.forms.php` |
+| Tools config | `vendor/melisplatform/melis-messenger/config/app.tools.php` |
 | Public service | `vendor/melisplatform/melis-messenger/src/Service/MelisMessengerService.php` |
 | Main controller | `vendor/melisplatform/melis-messenger/src/Controller/MelisMessengerController.php` |
 | Table gateways | `vendor/melisplatform/melis-messenger/src/Model/Tables/` |
-| DB install delta | `vendor/melisplatform/melis-messenger/install/dbdeploy/1112618_melis_messenger_install.sql` |
-| Front-end assets | `vendor/melisplatform/melis-messenger/public/js/tools/messenger-tool.js`, `public/css/messenger-tool.css` |
+| Recipient picker form element | `vendor/melisplatform/melis-messenger/src/Form/Factory/MelisMessengerInputFactory.php` |
+| DB install delta | `vendor/melisplatform/melis-messenger/install/` |
+
+See also: [melis-core](/reference/modules/melis-core)

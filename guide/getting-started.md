@@ -33,7 +33,7 @@ bring the Compose stack up.
 For Docker, everything is bundled — skip to [Option A](#option-a-docker-recommended) below.
 For Composer or source installs:
 
-- **PHP 8.1 or 8.3** with the extensions: `intl`, `mysqli`, `pdo_mysql`, `gd`
+- **PHP 8.1, 8.3 or 8.4** with the extensions: `intl`, `mysqli`, `pdo_mysql`, `gd`
   (freetype/jpeg/webp), `zip`, `curl`, `mbstring`, `exif`, `xml` (and `opcache` recommended).
 - **MySQL 8** (the stack uses MySQL 8.4).
 - **Composer 2** and **Git** (for the Composer and source paths).

@@ -1,122 +1,106 @@
 # MelisCmsSiteRobot
 
-> Édition et service dynamique d'un `robots.txt` par site pour les sites Melis. Package
-> `melisplatform/melis-cms-site-robot`.
+> Édition et service dynamique d'un `robots.txt` par domaine depuis le back-office. Package `melisplatform/melis-cms-site-robot`.
 
-## Objectif
+## Présentation
 
-`MelisCmsSiteRobot` ajoute un outil back-office permettant d'éditer le contenu du **`robots.txt`**
-de chaque domaine de site, ainsi qu'une route publique qui le sert dynamiquement. L'outil liste
-les domaines de site (groupés par site) dans une datatable ; l'édition d'un domaine ouvre une
-modale avec une zone de texte contenant le robots.txt de ce domaine. En front-office, une requête
-vers `/robots.txt` est mise en correspondance avec le **host** entrant et renvoie le texte stocké
-pour ce domaine (un corps vide si rien n'est stocké). Le texte robots est conservé dans une seule
-table indexée par domaine — il n'y a pas de variante par page ni par langue.
+`MelisCmsSiteRobot` vous permet de gérer le `robots.txt` de chaque domaine de site depuis le back-office et
+le sert dynamiquement à `https://<domain>/robots.txt` — directement depuis la base de données, sans
+fichier statique à maintenir. Les modifications prennent effet immédiatement après l'enregistrement. Le texte robots est stocké
+en une ligne par domaine dans une table dédiée ; il n'existe pas de variante par page ni par langue.
 
 ## Activation
 
-Un module Laminas standard, listé dans `config/melis.module.load.php` (juste après `MelisCms`) :
+Ajouter dans `config/melis.module.load.php` :
 
 ```php
 return [
-    // …
     'MelisCmsSiteRobot',
-    // …
 ];
 ```
 
-Dépendances (depuis `composer.json`) : `melis-core` et `melis-cms`. Il est en `dbdeploy: true`, sa
-table est donc créée/mise à jour via [melis-dbdeploy](/fr/reference/modules). Le module réutilise
-les services de table fournis par `melis-engine` (`MelisEngineTableRobot`,
-`MelisEngineTableSiteDomain`, `MelisEngineTableSite`).
+Dépendances : `melis-core` et `melis-cms` (`^5.2`). Le module est en `dbdeploy: true`, donc sa
+table est créée automatiquement. Il réutilise les passerelles de table fournies par `melis-engine` à l'exécution.
 
-## Services clés
+## Services principaux
 
-Le module n'enregistre **aucun service propre** dans `config/module.config.php` ; le contrôleur
-consomme des services core/engine existants :
+Le module n'enregistre aucun service propre. Le contrôleur consomme des services engine existants :
 
 | Alias de service | Rôle |
 | --- | --- |
-| `MelisEngineTableRobot` | Passerelle de table sur `melis_cms_domain_robots`. Le contrôleur lit/écrit le texte robots via `getEntryByField('robot_site_domain', $host)` et `save($data, $id)`. |
-| `MelisEngineTableSiteDomain` | Alimente la datatable des domaines : `getData($search, $searchableCols, $orderCol, $orderDir, $start, $length, $siteId)`, plus `getTotalData()` / `getTotalFiltered()`. |
-| `MelisEngineTableSite` | Liste les sites pour le filtre « choisir un site » de la datatable. |
-| `MelisCoreTool` | Construit la config de la datatable, les colonnes, les colonnes recherchables et le formulaire d'édition à partir de la config de l'outil (`setMelisToolKey('melis_cms_site_robots', 'melissiterobot_tool_templates')`). |
+| `MelisEngineTableRobot` | Passerelle de table sur `melis_cms_domain_robots` — lit et écrit le `robot_text` par domaine. |
+| `MelisEngineTableSiteDomain` | Alimente la liste des domaines de site (`sdom_id`, `site_label`, `sdom_domain`) pour l'outil back-office. |
 
 ## Back-office
 
-Déclaré dans `config/app.interface.php` et `config/app.tools.php`. L'outil se place sous la section
-de l'arbre des outils CMS (`meliscms_toolstree_section`) en tant que `meliscms_site_robot_tools`
-(icône `fa-server`). La clé d'interface de l'outil lui-même est `melis_cms_site_robots`, avec la
-vue principale `site_robot_tool_display`.
+Enregistré sous les outils **CMS** dans le menu gauche du back-office en tant que **Site robots** (icône serveur).
+L'outil affiche une liste des domaines de site de la plateforme — une ligne par domaine. Il n'y a pas d'action Ajouter ni
+Supprimer ; vous ne faites qu'**éditer** les entrées de domaine existantes.
 
-Toutes les actions sont servies par un unique contrôleur,
-`MelisCmsSiteRobot\Controller\ToolSiteRobot` (`ToolSiteRobotController`) :
+Cliquer sur **Éditer** pour un domaine ouvre une modale avec le nom de domaine (en lecture seule) et une grande zone de texte
+contenant le contenu `robots.txt` pour ce domaine. L'enregistrement effectue un upsert dans
+`melis_cms_domain_robots` (la ligne est créée au premier enregistrement si elle est absente).
+
+| Contrôleur | Classe |
+| --- | --- |
+| `ToolSiteRobot` | `MelisCmsSiteRobot\Controller\ToolSiteRobotController` |
+
+Actions principales :
 
 | Action | Rôle |
 | --- | --- |
-| `tool-container` / `tool-header-container` / `tool-content-container` | La coquille de l'outil : en-tête, description et la datatable `#tableSiteRobot`. |
-| `getSiteRobotData` | Flux JSON de la datatable (colonnes `sdom_id`, `site_label`, `sdom_domain`), avec filtrage par site via `tpl_site_id`. |
-| `tool-site-robot-content-filters-sites` | Affiche le `<select>` de filtre par site dans la barre de filtres de la datatable. |
-| `tool-modal-container` / `tool-modal-content` | La modale d'édition : charge la ligne du domaine et son texte robots existant dans le `site_robot_form` (domaine en lecture seule + zone de texte `robot_text`). |
-| `saveSiteRobot` | Valide le formulaire et enregistre le texte dans `melis_cms_domain_robots` (insertion ou mise à jour indexée par `robot_site_domain`), puis déclenche l'événement `site_robot_flash_messenger` (type de log `CMS_SITE_ROBOT_UPDATE`). |
-
-La config de la datatable (colonnes, recherche, filtres, formulaire) se trouve dans
-`config/app.tools.php` sous `melis_cms_site_robots → melissiterobot_tool_templates`. Voir
-[Créer un outil](/fr/guide/create-a-tool).
+| `toolContainerAction` | Affiche la mise en page de l'outil. |
+| `getSiteRobotDataAction` | Flux JSON pour la datatable des domaines. |
+| `toolContentTableActionEditAction` | Le bouton Éditer par ligne. |
+| `toolModalContentAction` | Modale d'édition — domaine + zone de texte `robot_text` (clé de formulaire `site_robot_form`). |
+| `saveSiteRobotAction` | Upsert dans `melis_cms_domain_robots`. |
+| `toolSiteRobotContentFiltersSitesAction` | Filtre par site dans la barre de filtres de la datatable. |
 
 ### Listener
 
-Au bootstrap (`src/Module.php`), pour les routes back-office uniquement,
-`MelisCmsSiteRobotFlashMessengerListener` s'attache aux événements `site_robot_flash_messenger`
-(et `melis_domain_flash_messenger`) et les transmet à
-`MelisCore\Controller\MelisFlashMessenger` afin que les résultats d'enregistrement apparaissent
-comme messages flash/log.
+`MelisCmsSiteRobotFlashMessengerListener` transmet les résultats d'enregistrement au flash-messenger central afin que
+les messages de succès/erreur apparaissent dans le back-office.
 
-## Front-office
+## Front office
 
-Ce module n'a ni plugin de templating ni view helper. Il enregistre à la place une route publique
-dans `config/module.config.php` :
+Une route publique dans `config/module.config.php` (`melis-cms-site-robot-special-urls`) mappe
+`/robots.txt` vers `ToolSiteRobotController::toolRobotsTxtAction`. L'action recherche dans
+`melis_cms_domain_robots` par le host demandeur et retourne le `robot_text` stocké.
 
-| Route | Mappe vers | Résultat |
+| Route | Handler | Résultat |
 | --- | --- | --- |
-| `/robots.txt` (`melis-cms-site-robot-special-urls/robots_txt`) | `ToolSiteRobot::toolRobotsTxt` | Recherche dans `melis_cms_domain_robots` par le **host** de la requête et renvoie le `robot_text` stocké (vue terminale `tool-robots-txt.phtml`, qui se contente d'afficher le contenu). |
-
-Chaque domaine peut ainsi servir son propre `robots.txt` sans fichier statique sur le disque.
+| `/robots.txt` | `ToolSiteRobotController::toolRobotsTxtAction` | Sert le `robot_text` stocké pour le domaine demandeur. |
 
 ## Tables de base de données
 
-Créées depuis `install/sql/setup_structure.sql` (et le delta dbdeploy
-`install/dbdeploy/93118_melis_site_robot_install.sql`) :
-
-| Table | Rôle |
+| Table | Contenu |
 | --- | --- |
-| `melis_cms_domain_robots` | Une entrée robots.txt par domaine : `robot_id` (PK), `robot_site_domain` (le host), `robot_text` (le corps complet du robots.txt). |
+| `melis_cms_domain_robots` | Une entrée robots.txt par domaine : `robot_id` (PK), `robot_site_domain`, `robot_text`. |
 
 ## Exemple
 
-Lire le texte robots d'un host depuis votre propre code (le même appel que celui de la route
-front) :
+Lire ou servir le texte robots d'un domaine depuis votre propre code :
 
 ```php
-$robotTable = $this->getServiceManager()->get('MelisEngineTableRobot');
-$row = $robotTable->getEntryByField('robot_site_domain', 'www.example.com')->current();
-$robotsTxt = $row ? $row->robot_text : null;
-```
+// Lister les domaines pour l'outil back-office :
+$domains = $sm->get('MelisEngineTableSiteDomain')
+              ->getData($search, $cols, $colOrder, $dir, $start, $len)->toArray();
 
-En pratique, vous éditez ce contenu depuis l'outil back-office **Site Robot**, et les visiteurs
-l'obtiennent en demandant `https://www.example.com/robots.txt`.
+// Obtenir le robots.txt pour un domaine spécifique :
+$robot = (array) $sm->get('MelisEngineTableRobot')
+                    ->getEntryByField('robot_site_domain', $domainName)->current();
+echo $robot['robot_text'] ?? '';
+```
 
 ## Fichiers clés
 
-| Sujet | Chemin (sous `vendor/melisplatform/melis-cms-site-robot/`) |
+| Élément | Chemin |
 | --- | --- |
-| Bootstrap du module / chargement de la config | `src/Module.php` |
-| Routes (back-office + `/robots.txt`) / contrôleurs | `config/module.config.php` |
-| Arbre des outils back-office | `config/app.interface.php` |
-| Datatable & formulaire d'édition de l'outil | `config/app.tools.php` |
-| Contrôleur (toutes les actions) | `src/Controller/ToolSiteRobotController.php` |
-| Listener de flash-messenger | `src/Listener/MelisCmsSiteRobotFlashMessengerListener.php` |
-| Vue front `robots.txt` | `view/melis-cms-site-robot/tool-site-robot/tool-robots-txt.phtml` |
-| SQL d'installation | `install/sql/setup_structure.sql`, `install/dbdeploy/` |
+| Routes (back-office + `/robots.txt`) | `vendor/melisplatform/melis-cms-site-robot/config/module.config.php` |
+| Arbre des outils back-office | `vendor/melisplatform/melis-cms-site-robot/config/app.interface.php` |
+| Datatable & formulaire d'édition de l'outil | `vendor/melisplatform/melis-cms-site-robot/config/app.tools.php` |
+| Contrôleur (toutes les actions) | `vendor/melisplatform/melis-cms-site-robot/src/Controller/ToolSiteRobotController.php` |
+| Listener de flash-messenger | `vendor/melisplatform/melis-cms-site-robot/src/Listener/MelisCmsSiteRobotFlashMessengerListener.php` |
+| SQL d'installation | `vendor/melisplatform/melis-cms-site-robot/install/` |
 
-Voir la [Référence des modules](/fr/reference/modules) pour la carte complète des modules.
+Voir aussi : [Référence des modules](/fr/reference/modules), [melis-cms](/fr/reference/modules/melis-cms), [melis-core](/fr/reference/modules/melis-core)

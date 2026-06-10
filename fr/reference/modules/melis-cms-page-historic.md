@@ -1,111 +1,102 @@
 # MelisCmsPageHistoric
 
-> Historique de version par page pour le CMS — ajoute un onglet **Historique** à l'éditeur de page
-> et un widget de tableau de bord listant l'activité récente des pages. Package
+> Journal d'audit pour l'édition des pages CMS — enregistre qui a fait quoi sur une page et quand,
+> exposé dans un onglet Historique et un widget de tableau de bord. Package
 > `melisplatform/melis-cms-page-historic`.
 
-## Objectif
+## Présentation
 
-`MelisCmsPageHistoric` enregistre une piste d'audit des modifications de pages. Dès qu'une page est
-**enregistrée**, **publiée**, **dépubliée** ou **supprimée** dans le CMS, le module capture qui a
-agi, quand, et quelle action — puis expose cet historique dans un onglet **Historique** au sein de
-l'éditeur de page ainsi que dans un widget de tableau de bord **Activité récente des utilisateurs**.
-Il fonctionne automatiquement en écoutant les évènements de page du CMS ; rien n'est à configurer
-page par page.
+`MelisCmsPageHistoric` capture automatiquement chaque action sur une page (création, modification,
+publication, dépublication, suppression) avec l'identité de l'auteur et l'horodatage. L'historique
+est écrit via des écouteurs d'événements qui se branchent sur le cycle de vie des pages CMS — rien
+n'est à configurer page par page. Le journal est exposé en lecture seule dans un **onglet
+Historique** au sein de l'éditeur de page et dans un widget **Activité récente des utilisateurs**
+sur le tableau de bord.
 
 ## Activation
 
-Un module Laminas standard. Ajoutez-le à la liste de chargement (`config/melis.module.load.php`) :
+Ajoutez dans `config/melis.module.load.php` :
 
 ```php
 return [
-    // …
     'MelisCmsPageHistoric',
 ];
 ```
 
-Exécutez les deltas `install/dbdeploy/` du module (le package définit `extra.dbdeploy: true`) pour
-créer sa table. Il dépend de `melis-core`, `melis-engine`, `melis-front` et `melis-cms` — voir la
-[Référence des modules](/fr/reference/modules) et le guide [Construire un site](/fr/guide/build-a-site)
-pour l'ensemble de la pile CMS.
+Exécutez les deltas `install/dbdeploy/` fournis pour créer la table d'historique (`extra.dbdeploy: true`).
+Nécessite `melis-core`, `melis-engine`, `melis-front` et `melis-cms` (`^5.2`).
 
 ## Services principaux
 
 | Alias de service | Rôle |
 | --- | --- |
-| `MelisPageHistoricTable` | Passerelle de table sur `melis_hist_page_historic` (étend `MelisGenericTable`). Lit et écrit les lignes d'historique. |
+| `MelisPageHistoricTable` | Passerelle de table sur `melis_hist_page_historic`. Gère toutes les lectures et écritures des lignes d'historique. |
 
-Méthodes notables de `MelisPageHistoricTable` :
-
-| Méthode | Rôle |
-| --- | --- |
-| `getPageHistoricData($options, $fixedCriteria, $user, $action)` | Flux d'historique paginé/filtré (jointure sur `melis_core_user` pour le nom de l'auteur) ; alimente le tableau de l'outil Historique. |
-| `getDescendingHistoric($histIdPage, $max)` | Lignes d'historique d'une page, des plus récentes aux plus anciennes. |
-| `getHistoricById($histId, $max)` | Une entrée d'historique unique par `hist_id`. |
-| `getPagesHistoricForDashboard($max)` | Pages distinctes les plus récentes pour le widget de tableau de bord. |
-| `getPageHistoricListOfActions($order)` | Valeurs d'action distinctes (Save / Publish / Unpublish / Delete) pour le filtre d'action. |
-| `getUsers()` / `getBOUsers($where)` | Auteurs distincts / recherche d'utilisateur compatible Select2 pour le filtre utilisateur. |
+Aucune classe de service dédiée n'est fournie — les lectures et écritures passent par
+`MelisPageHistoricTable` ainsi que par les actions save/delete du contrôleur.
 
 ## Back-office
 
-Le module s'intègre à l'éditeur de page du CMS et au tableau de bord :
+### Onglet Historique (éditeur de page)
 
-- **Onglet Historique** — déclaré sous l'interface `meliscms_page` → `meliscms_tabs` en tant que
-  `melispagehistoric_page_historic` (melisKey `melispagehistoric_historic`, icône `history`).
-  Il renvoie vers `MelisCmsPageHistoric\Controller\PageHistoric::renderPageHistoric`.
-- **Tableau d'historique** (`melispagehistoric_table`) — un outil Melis (`tool_meliscmspagehistoric`,
-  voir [Créer un outil](/fr/guide/create-a-tool)) listant les colonnes `hist_user_id`, `hist_action`,
-  `hist_date`, `hist_description`, avec des filtres gauche/centre/droite (limite, recherche
-  utilisateur, plage de dates, action). Son point d'accès de données est
-  `PageHistoric::getPageHistoricData`.
-- **L'historique est écrit automatiquement** par deux écouteurs attachés au démarrage du back-office :
-  - `MelisPageHistoricPageEventListener` — sur `meliscms_page_save_end`,
-    `meliscms_page_publish_end`, `meliscms_page_unpublish_end`, renvoie vers
-    `PageHistoric::savePageHistoric` (action étiquetée `Save` / `Publish` / `Unpublish`).
-  - `MelisPageHistoricDeletePageListener` — sur `meliscms_page_delete_end`, renvoie vers
-    `PageHistoric::deletePageHistoric`.
+Injecté via `config/app.interface.php` (clé `melispagehistoric_historic`, icône `history`) dans
+les onglets de l'éditeur de page CMS. L'onglet affiche un DataTable en lecture seule limité à la
+page courante (`hist_page_id`). Filtres disponibles : limite, utilisateur, plage de dates, type
+d'action. La liste d'utilisateurs pour le filtre est servie par `getBackOfficeUsersAction`. La
+configuration de l'outil est déclarée dans `config/app.tools.php` (`tool_meliscmspagehistoric`).
+
+Contrôleur : `PageHistoricController` — l'action `getPageHistoricDataAction` alimente le DataTable.
 
 ### Plugin de tableau de bord
 
-`MelisCmsPageHistoricRecentUserActivityPlugin` (un [plugin de tableau de bord](/fr/guide/plugins)
-du back-office) affiche le widget **Activité récente des utilisateurs** — les pages modifiées le
-plus récemment avec leur auteur, l'icône d'action et la date. Action `recentActivityPages`,
-template `melis-cms-page-historic/dashboard-plugin/recent-user-activity`, section `MelisCms`.
+`MelisCmsPageHistoricRecentUserActivityPlugin` (`recentActivityPages`) affiche le widget **Activité
+récente des utilisateurs** sur le tableau de bord du back-office. La configuration se trouve dans
+`config/dashboard-plugins/`, section `MelisCms`.
+
+### Comment l'historique est écrit (pattern écouteur)
+
+Deux écouteurs sont branchés dans `src/Module.php` (démarrage back-office uniquement) :
+
+| Écouteur | Événement | Ce qui est enregistré |
+| --- | --- | --- |
+| `MelisPageHistoricPageEventListener` | `meliscms_page_save_end`, `meliscms_page_publish_end`, `meliscms_page_unpublish_end`, … | Actions Enregistrement / Publication / Dépublication |
+| `MelisPageHistoricDeletePageListener` | `meliscms_page_delete_end` | Action Suppression (effectue aussi un nettoyage) |
 
 ## Tables de base de données
 
-| Table | Rôle |
+| Table | Contenu |
 | --- | --- |
 | `melis_hist_page_historic` | Une ligne par action enregistrée : `hist_id` (clé primaire), `hist_page_id`, `hist_action`, `hist_date`, `hist_user_id`, `hist_description`. |
 
 ## Exemple
 
-Lire l'historique d'une page (le plus récent en premier) via le service de table :
+Se brancher sur un événement de page CMS (le même pattern qu'utilisent les écouteurs — réutilisable
+par n'importe quel module) :
 
 ```php
-/** @var \MelisCmsPageHistoric\Model\Tables\MelisPageHistoricTable $histTable */
-$histTable = $serviceManager->get('MelisPageHistoricTable');
-
-$rows = $histTable->getDescendingHistoric($pageId, 10)->toArray();
-foreach ($rows as $row) {
-    // $row['hist_action'], $row['hist_date'], $row['hist_user_id'], $row['hist_description']
-}
+// Dans Module.php onBootstrap :
+$sharedEvents = $eventManager->getSharedManager();
+$sharedEvents->attach('MelisCms', 'meliscms_page_publish_end', function ($e) {
+    $params = $e->getParams(); // id de page, données de page…
+    // enregistrer : qui/quoi/quand -> melis_hist_page_historic
+}, 50);
 ```
 
-Vous n'écrivez normalement jamais l'historique vous-même — enregistrer / publier / supprimer une
-page via le CMS le fait automatiquement grâce aux écouteurs ci-dessus.
+Il n'est pas nécessaire d'écrire les lignes d'historique soi-même — enregistrer, publier ou
+supprimer une page via le CMS déclenche les écouteurs automatiquement.
 
 ## Fichiers clés
 
-| Sujet | Chemin |
+| Élément | Chemin |
 | --- | --- |
-| Amorçage du module (attache les écouteurs, le layout) | `vendor/melisplatform/melis-cms-page-historic/src/Module.php` |
-| Contrôleur | `vendor/melisplatform/melis-cms-page-historic/src/Controller/PageHistoricController.php` |
+| Amorçage du module (écouteurs) | `vendor/melisplatform/melis-cms-page-historic/src/Module.php` |
+| Contrôleur de l'onglet Historique | `vendor/melisplatform/melis-cms-page-historic/src/Controller/PageHistoricController.php` |
 | Passerelle de table | `vendor/melisplatform/melis-cms-page-historic/src/Model/Tables/MelisPageHistoricTable.php` |
-| Écouteur d'enregistrement | `vendor/melisplatform/melis-cms-page-historic/src/Listener/MelisPageHistoricPageEventListener.php` |
+| Écouteur d'événement de page | `vendor/melisplatform/melis-cms-page-historic/src/Listener/MelisPageHistoricPageEventListener.php` |
 | Écouteur de suppression | `vendor/melisplatform/melis-cms-page-historic/src/Listener/MelisPageHistoricDeletePageListener.php` |
 | Plugin de tableau de bord | `vendor/melisplatform/melis-cms-page-historic/src/Controller/DashboardPlugins/MelisCmsPageHistoricRecentUserActivityPlugin.php` |
-| Interface onglet / tableau Historique | `vendor/melisplatform/melis-cms-page-historic/config/app.interface.php` |
-| Configuration de l'outil Historique | `vendor/melisplatform/melis-cms-page-historic/config/app.tools.php` |
-| Routes & alias de service | `vendor/melisplatform/melis-cms-page-historic/config/module.config.php` |
-| SQL d'installation / dbdeploy | `vendor/melisplatform/melis-cms-page-historic/install/sql/setup_structure.sql`, `vendor/melisplatform/melis-cms-page-historic/install/dbdeploy/` |
+| Configuration interface onglet Historique | `vendor/melisplatform/melis-cms-page-historic/config/app.interface.php` |
+| Configuration de l'outil | `vendor/melisplatform/melis-cms-page-historic/config/app.tools.php` |
+| SQL d'installation / dbdeploy | `vendor/melisplatform/melis-cms-page-historic/install/` |
+
+Voir aussi : [MelisCms](/fr/reference/modules/melis-cms), [Référence des modules](/fr/reference/modules)

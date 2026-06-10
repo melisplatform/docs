@@ -1,109 +1,99 @@
 # MelisDesign
 
-> A backoffice reference library of ready-to-use HTML/CSS/JS UI patterns to copy from when building
-> tools and plugins. Package: `melisplatform/melis-design`.
+> Back-office design catalog / pattern library: ~60 ready-made HTML/JS screens built on the
+> MelisCore admin theme. Package `melisplatform/melis-design`.
 
 ## Purpose
 
-MelisDesign ships **no business services and no database tables**. It is a catalogue: dozens of
-pre-built backoffice screens (dashboards, forms, tables, charts, maps, galleries, calendars,
-e-commerce pages, medical/support layouts, login/signup, etc.) styled with the same CSS that
-MelisCore already loads. When you build a [tool](/guide/create-a-tool) or a
-[plugin](/guide/plugins), you open the matching screen in the backoffice, find the HTML markup and
-the JS init code, copy it, and wire it to your own logic. As the module's README puts it: "find the
-HTML and JS if needed and start coding a plugin" — there is no CSS to hunt for.
+MelisDesign ships no database, no services, and no business logic — it is a pure view and asset
+reference. Each demo page is a controller that renders a `.phtml` showing how a given screen or
+widget looks with MelisCore's CSS already applied. The intended workflow is to find the closest
+design in the catalog, copy its markup (and JS if needed) into your own module, and wire it to
+your own data. As the README states: *"All styles are already included with MelisCore. There is no
+need to look for CSS. Just find the HTML and JS if needed and start coding a plugin!"*
+
+It depends only on **`melisplatform/melis-core`** (`^5.2`) for the theme and assets.
 
 ## Enable it
 
-MelisDesign is a standard Laminas module. It is listed in `config/melis.module.load.php` (entry
-`'MelisDesign'`) so it loads with the platform. It depends on **`melis-core`** (declared in
-`composer.json` and in `Module.php`'s `@require`); its CSS/JS resources are registered through the
-MelisCore interface config and served from the module's `public/` folder via the asset-manager
-alias `MelisDesign/`.
+Add to `config/melis.module.load.php`:
 
 ```php
-// config/melis.module.load.php
 return [
-    // …
     'MelisDesign',
 ];
 ```
 
+`melis-cms` is expected to be present in the platform as well.
+
 ## Backoffice
 
-The whole module is surfaced as a single backoffice tool, declared in
-`config/app.interface.php` (no separate `app.tool.php`). It hangs under the tools-tree section
-`meliscore_tool_creatrion_designs` (icon `fa fa-paint-brush`, label from `tr_melistooldesign_title`)
-and exposes a left menu (`melisdesign_cof`) whose entries each `forward` to one controller/action.
+The module surfaces as a single tool in the back office, listed under
+`meliscore_toolstree_section` with the melisKey `meliscore_tool_creatrion_designs`. It appears in
+the left menu as **HTML** (`melisdesign_cof`), which enumerates all ~60 demo pages. Clicking a
+page renders that design full-screen — read-only, nothing to configure or save.
 
-Every page follows the same shape: a controller named after the topic, with a single
-`render<Topic>Action()` that reads `melisKey` from the route and returns a `ViewModel` — the real
-content is the `.phtml` markup and the matching JS init script.
+Designs are grouped as follows:
 
-| Menu entry (melisKey) | Controller → action | View / JS |
-| --- | --- | --- |
-| `melis_dashboard` | `Dashboard` → `render-dashboard` | `view/melis-design/dashboard/`, `public/js/dashboard/` |
-| `melis_profile_resume` | `ProfileResume` → `render-profile-resume` | `view/melis-design/profile-resume/` |
-| `melis_portfolio` | `Portfolio` → `render-portfolio` | `public/js/portfolio/` |
-| `melis_support_tickets` / `…_questions` / `…_answers` / `…_knowledge` / `…_forum_overview` / `…_forum_post` | `Support*` | `public/js/support-*` |
-| `melis_pricing_tables`, `melis_survey`, `melis_events`, `melis_contacts` | `PricingTables`, `Survey`, `Events`, `Contacts` | `public/js/events/`, … |
-| `melis_maps_google` / `…_clustering` / `…_extend_pagination` / `…_filtering` / `…_geo_search` / `…_json` / `…_vector` | `Maps*` | `public/js/maps-*.init.js` |
-| `melis_photo_gallery`, `melis_gallery_video`, `melis_carousel`, `melis_sliders` | `PhotoGallery`, `GalleryVideo`, `Carousel`, `Sliders` | `public/js/photo-gallery/`, `public/js/tiny-slider/` |
-| `melis_buttons_icons`, `melis_icons`, `melis_typography`, `melis_grid`, `melis_tabs`, `melis_timelines` | `ButtonsIcons`, `Icons`, `Typography`, `Grid`, `Tabs`, `Timelines` | — |
-| `melis_tables`, `melis_tables_responsive` | `Tables`, `TablesResponsive` | `public/js/tables/`, `public/tables/datatables/` |
-| `melis_notifications`, `melis_modals`, `melis_widgets`, `melis_charts`, `melis_calendar` | `Notifications`, `Modals`, `Widgets`, `Charts`, `Calendar` | `public/js/charts/`, `public/js/calendar/` |
-| `melis_form_wizards`, `melis_form_elements`, `melis_form_validator`, `melis_file_manager` | `FormWizards`, `FormElements`, `FormValidator`, `FileManager` | `public/js/form-*`, `public/js/file-manager/` |
-| `melis_inbox`, `melis_finances`, `melis_invoice`, `melis_bookings` | `Inbox`, `Finances`, `Invoice`, `Bookings` | `public/js/invoice/`, `public/js/bookings/` |
-| `melis_medical_overview` / `…_patients` / `…_appointments` / `…_memos` / `…_metrics` | `Medical*` | `public/js/medical*` |
-| `melis_social`, `melis_shop_edit_products`, `melis_shop_products`, `melis_ratings` | `Social`, `ShopEditProducts`, `ShopProducts`, `Ratings` | `public/js/products/`, `public/js/ratings/` |
-| `melis_login`, `melis_signup`, `melis_my_account`, `melis_error` | `Login`, `Signup`, `MyAccount`, `Error` | `public/js/edit-account/` |
+| Group | Demos |
+| --- | --- |
+| App shells & profiles | Dashboard · Profile / Resume · Portfolio · Edit Account · Social · Ratings |
+| Support / community | Support Tickets · Forum Overview · Forum Post · Q&A Listing · Q&A Page · Knowledge Base · Survey |
+| Commerce & finance | Pricing Tables · Finances · Invoice · Bookings · Add Product · Products |
+| Medical (vertical demo) | Medical Overview · Patients · Appointments · Memos · Metrics |
+| Maps | Google Maps · Clustering · Extend · Filter · Search · JSON · Vector Maps |
+| Media & galleries | Photo Gallery · Gallery Video · Carousel · Sliders |
+| Data & layout | Tables · Responsive Tables · Grid System · Charts · Calendar · Events · Contacts · Timelines · Widgets |
+| UI elements | Buttons · Icons · Typography · Alerts & Notifications · Modals · Tabs |
+| Forms | Form Wizards · Form Elements · Form Validator |
+| Files & messaging | File Manager · Inbox |
+| Auth & errors | Login · Signup · Error |
 
-All controllers live in `MelisDesign\Controller\*` and are wired as `invokables` in
-`config/module.config.php`. Routing goes through the `melis-backoffice` child route
-`application-MelisDesign` (`/MelisDesign/[:controller[/:action]]`).
-
-## Front office
-
-None. MelisDesign has **no templating plugins, no view helpers and no controller plugins**. It is a
-design reference only — you copy its markup into your own front-office plugins (see
-[Plugins](/guide/plugins)).
+The **HTML** sub-menu is declared in `config/app.interface.php`; each entry `forward`s to its
+controller. `DesignSidebarController` renders the left navigation and exposes two AJAX helpers:
+`getDomAction()` (returns the sidebar DOM via `MelisCoreTool::getViewContent`) and
+`getResourceAction()` (returns a design's resource config from `melisdesign/datas/<key>` in
+`MelisCoreConfig`).
 
 ## Database tables
 
-None. MelisDesign ships no `install/*.sql` and no dbdeploy deltas.
-
-## Bundled assets
-
-The module's interface config (`config/app.interface.php`) loads a concatenated set of front-end
-libraries used by the examples: FullCalendar, tiny-slider, Bootstrap Icons, Prism, prettyPhoto and
-DataTables, plus the module's own `design-tool.css` / `design-tool.js`. A `build` bundle
-(`public/build/css/bundle.css`, `public/build/js/bundle.js`) is provided to collapse them into
-single requests.
+None. MelisDesign ships no install SQL and no database schema.
 
 ## Example
 
-Typical workflow — reuse a MelisDesign screen in your own plugin:
+Reuse a design in your own module — the intended workflow:
 
-```text
-1. Backoffice → Designs (paint-brush) → e.g. "Bookings".
-2. Read the markup:  vendor/melisplatform/melis-design/view/melis-design/bookings/render-bookings.phtml
-3. Read the JS init: vendor/melisplatform/melis-design/public/js/bookings/bookings.init.js
-4. Copy the HTML/JS into your tool or templating plugin and connect it to your service/data.
+```php
+// 1. Browse Designs in the BO (left menu: HTML) and pick the closest screen or component.
+// 2. Copy the .phtml markup into your tool's view:
+//    vendor/melisplatform/melis-design/view/melis-design/<area>/*.phtml
+// 3. If the design needs JS behaviour, grab the matching file:
+//    vendor/melisplatform/melis-design/public/js/<area>/*
+// 4. Skip the CSS — MelisCore already loads all required classes.
+// 5. Replace demo content with your real data / bindings.
 ```
 
-The CSS is already loaded by MelisCore, so only the HTML and JS need to be carried over.
+Controller pattern (all design controllers follow the same shape):
+
+```php
+// src/Controller/ButtonsIconsController.php
+public function renderButtonsIconsAction()
+{
+    $melisKey = $this->params()->fromRoute('melisKey', '');
+    $view = new ViewModel();
+    $view->melisKey = $melisKey;
+    return $view; // → view/melis-design/buttons-icons/…phtml
+}
+```
 
 ## Key files
 
 | Concern | Path |
 | --- | --- |
-| Module bootstrap | `vendor/melisplatform/melis-design/src/Module.php` |
-| Routing + controllers (invokables) | `vendor/melisplatform/melis-design/config/module.config.php` |
-| Tool/menu declaration + assets | `vendor/melisplatform/melis-design/config/app.interface.php` |
-| Example controllers | `vendor/melisplatform/melis-design/src/Controller/*Controller.php` |
-| Example views | `vendor/melisplatform/melis-design/view/melis-design/<topic>/` |
-| Example init scripts | `vendor/melisplatform/melis-design/public/js/` |
-| Translations | `vendor/melisplatform/melis-design/language/en_EN.interface.php`, `…/fr_FR.interface.php` |
+| One controller per design | `vendor/melisplatform/melis-design/src/Controller/<Name>Controller.php` |
+| HTML markup to copy | `vendor/melisplatform/melis-design/view/melis-design/<area>/` |
+| Optional JS per design | `vendor/melisplatform/melis-design/public/js/<area>/` |
+| Tool & page list (left menu) | `vendor/melisplatform/melis-design/config/app.interface.php` |
+| Routing + controller map | `vendor/melisplatform/melis-design/config/module.config.php` |
 
-See also: [Module reference](/reference/modules) · [Create a tool](/guide/create-a-tool) ·
-[Plugins](/guide/plugins).
+See also: [MelisCore](/reference/modules/melis-core)

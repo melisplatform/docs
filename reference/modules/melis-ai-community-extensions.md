@@ -1,158 +1,145 @@
 # MelisAICommunityExtensions
 
-> Community AI extensions that wire Melis AI into real editing flows — AI-assisted news content
-> and AI mini-template generation. Package `melisplatform/melis-ai-community-extensions`.
+> Injects AI generation into existing CMS editing surfaces — mini-template creator, news content creator, and drag-and-drop zone AI buttons. Package `melisplatform/melis-ai-community-extensions`.
 
 ## Purpose
 
-MelisAICommunityExtensions ships ready-to-use AI agents that plug the [Melis AI](/guide/ai) engine
-into concrete backoffice tasks. It provides two pre-configured agents:
-
-- **newscontentcreator** — generates news article content (title, intro, paragraphs, conclusion)
-  directly into MelisCmsNews fields, optionally using attached images as context.
-- **minitemplatecreator** — helps the model author mini-template HTML for a site, backed by an
-  [MCP](/guide/mcp) server that reads relevant site assets, resolves the site's public URL, uploads
-  images, and renders a live preview.
-
-The module does not add a standalone tool screen of its own; instead it injects a **"Generate with
-AI"** button and chat modals into existing tools (the News editor and the Mini Template Manager) and
-manages the CSS/JS assets the AI produces.
+MelisAICommunityExtensions is an app layer on top of the MelisAI suite that wires AI generation directly into existing backoffice editing surfaces. It registers two pre-configured instances (`minitemplatecreator` and `newscontentcreator`), two MCP tool sets, and a set of event listeners that manage the lifecycle of AI-generated front-end assets (CSS, JS, images). It does not add a standalone tool screen; instead it injects **Generate with AI** buttons and chat modals into the Mini Template Manager and the News editor, and also into page drag-and-drop zones.
 
 ## Enable it
 
-It is a standard Laminas module listed in `config/melis.module.load.php` — ensure
-`'MelisAICommunityExtensions'` is present in that array. It requires `melisplatform/melis-ai`
-(`^5.3`) and PHP 8.1/8.3 (see `composer.json`); it integrates with `melis-cms`, `melis-cms-news` and
-`melis-engine` when present. Its install deltas (`install/dbdeploy/`) seed the agent/instance data,
-so run the dbdeploy after enabling.
+Add to `config/melis.module.load.php`:
 
-To make AI-generated mini-template assets render on the front office, also load
-`MelisAICommunityExtensions` on the site itself (MelisCMS → Site Tools → Sites → *site* → Module
-Loading tab). See [Module reference](/reference/modules), [AI](/guide/ai) and [MCP](/guide/mcp).
+```php
+return [
+    'MelisAICommunityExtensions',
+];
+```
+
+Requires `melisplatform/melis-ai` `^5.3`. Run the dbdeploy after enabling — the module seeds the `minitemplatecreator` and `newscontentcreator` agent/instance rows into the MelisAI engine tables (`dbdeploy: true`). The module integrates with MelisCms and MelisCmsNews.
 
 ## Key services
 
-The module registers a single table-gateway alias in `config/module.config.php`; the heavy lifting
-is done by the agents (seeded in the database) plus the controllers and listeners below.
-
 | Service alias | Role |
 | --- | --- |
-| `AINewsTable` | Table gateway (`MelisAICommunityExtensions\Model\Tables\NewsTable`, extends `MelisCmsNewsTable`). `getNewsData($newsId)` joins `melis_cms_news` with `melis_cms_site` to resolve a post's `site_name` (used to locate site image paths). |
+| `generateWithAIBtn` (view helper `MelisGenerateWithAIBtnHelper`) | Renders the reusable **Generate with AI** button (using the engine's `melisAIIcon`); reused across all three editing surfaces. |
 
-It also adds a view helper alias `generateWithAIBtn`
-(`MelisGenerateWithAIBtnHelper`), which renders the reusable **Generate with AI** button (AI icon +
-label), and a `controllers` block for its four controllers.
+The module reuses the engine's `melis_ai_instances` / `melis_ai_agents` tables — it owns no additional AI tables.
 
 ## Backoffice
 
-The module has no tool tree entry of its own (`app.tools.php` is an empty placeholder). Instead it
-hooks into existing tools via `config/app.interface.php` and event listeners.
+Three editing surfaces are extended. In each, an AI button opens a scoped chat and the result is written back into the correct field.
 
-| Controller | Key actions | Role |
+### AI Mini-template Creator (MiniTemplateController)
+
+Overrides the MelisCms mini-template manager to add an **AI Mini Template Creator** button that opens the `minitemplatecreator` chat. The manual **Add mini-template** form also gains a **Generate with AI** button inside the TinyMCE toolbar of the *Template's HTML* field. Existing mini-templates carry an AI badge for duplicate/vary-with-AI flows.
+
+| Action | Purpose |
+| --- | --- |
+| `renderAiChat` | Opens the `minitemplatecreator` chat; passes `siteModule` and an optional reference template. |
+| `getMiniTemplatePreviewShell` | Returns the preview HTML shell with AI assets injected. |
+| `validateTemplateName` | Validates the proposed template name. |
+| `checkTemplateAssets` | Checks that expected assets exist. |
+| `getSiteModuleByPageTemplateId` | Resolves a page template's site module. |
+| `getAIIcon` / `getGenerateWithAIButton` | Returns the icon and button markup. |
+
+### News Content Creator (NewsController)
+
+Adds a **Generate with AI** button on each **Paragraph** in the News editor **Texts** tab, per language. Opens the `newscontentcreator` chat scoped to that article (session isolated per article so sessions do not collide).
+
+| Action | Purpose |
+| --- | --- |
+| `renderAiChat` | Opens the `newscontentcreator` chat; sets **exit params** to route the answer back to the target paragraph field; passes article images as `custom_files`. |
+| `getNewsTitle` | Returns the news article title to seed the chat greeting. |
+| `getGenerateWithAIButton` | Returns the per-paragraph button markup. |
+
+### Generate-with-AI in drag-and-drop zones
+
+Empty page drag-and-drop zones receive an injected **Generate with AI** button. When the user accepts a generated block, three commit options are presented: **Cancel**, **Insert** (drop into this zone only), or **Save & Insert** (drop and also promote to a permanent reusable mini-template).
+
+### BaseController
+
+`BaseController` provides `emptyGenericModal` shared across the surfaces.
+
+### Event listeners
+
+| Listener | Event | Effect |
 | --- | --- | --- |
-| `MelisAICommunityExtensions\Controller\News` | `render-ai-chat`, `get-generate-with-ai-button`, `get-news-title` | Opens the **newscontentcreator** chat for a given `newsId`/`paragraphField`; builds `exitParamArr` so the agent writes its answer back into the targeted news field. |
-| `MelisAICommunityExtensions\Controller\MiniTemplate` | `render-ai-chat`, `get-generate-with-ai-button`, `get-mini-template-preview-shell`, `validate-template-name`, `check-template-assets`, `get-site-module-by-page-template-id` | Opens the **minitemplatecreator** chat for a site module / page template; serves the preview shell and validates template names/assets. |
-| `MelisAICommunityExtensions\Controller\MelisPluginRendererOverride` | `get-plugin` | Overrides the MelisFront plugin renderer route (`/melispluginrenderer`) so AI-generated mini-template content renders correctly. |
-| `MelisAICommunityExtensions\Controller\Base` | — | Shared base controller (service-manager helpers, TinyMCE config access). |
+| `…TinyMCEConfigurationListener` | `meliscore_tinymce_config` | Points the TinyMCE `minitemplate` plugin at this module's JS. |
+| `…CreateMiniTemplateListener` | `meliscms_mini_template_manager_create_end` | Moves temp CSS/JS/images to permanent storage; renames the init JS per template. |
+| `…PublishPageListener` | `meliscms_page_publish_start` | Promotes temp assets a published page references; updates `page_content`. |
+| `…SanitizeSavedPluginHtmlListener` | `meliscms_page_savesession_plugin_start` | Cleans carousel/slider runtime markup (Owl/Slick/Swiper artefacts) before save. |
+| `…DeleteMiniTemplateAssetsListener` | `meliscms_mini_template_manager_delete_end` | Deletes the template's CSS/JS/images. |
+| `…AttachAIGeneratedCssListener` | `MvcEvent::EVENT_FINISH` (front + back) | Injects AI CSS/JS into rendered pages. |
+| `…InjectDndAiButtonListener` | `MvcEvent::EVENT_FINISH` | Injects the **Generate with AI** button into drag-and-drop zones. |
 
-Backoffice integration points declared in `app.interface.php`:
-
-- `melisaicommunity_extension_generate_news_text_modal` (melisKey, icon `cogwheel`) — forwards to
-  `News/render-ai-chat`.
-- A `jscallback` `addNewsGenerateAIBtn()` injected under the MelisCmsNews paragraph fields.
-- A `jscallback` `addMinitplCreatorGenerateAIBtn()` injected into the MelisCMS Mini Template Manager
-  add form.
-
-Event listeners (attached in `src/Module.php`, all extending `MelisGeneralListener`):
-
-| Listener | Hooked event | Role |
-| --- | --- | --- |
-| `...CreateMiniTemplateListener` | `meliscms_mini_template_manager_create_end` | Persists AI-generated mini-template assets when a template is created. |
-| `...DeleteMiniTemplateAssetsListener` | `meliscms_mini_template_manager_delete_end` | Cleans up the AI CSS/JS for a deleted mini-template. |
-| `...PublishPageListener` | `meliscms_page_publish_start` | Promotes AI-generated assets when a page is published. |
-| `...SanitizeSavedPluginHtmlListener` | `meliscms_page_savesession_plugin_start` | Sanitises AI HTML before it is saved into page content. |
-| `...AttachAIGeneratedCssListener` | render (front + back) | Appends AI-generated CSS to the page. |
-| `...InjectDndAiButtonListener` | render / dnd-layout | Injects the "Generate with AI" button into drag-and-drop zones. |
-| `...TinyMCEConfigurationListener` | backoffice bootstrap | Extends the TinyMCE configuration used by the mini-template editor. |
-
-## Front office
-
-The module overrides the `melis-plugin-renderer` route (`/melispluginrenderer`) with
-`MelisPluginRendererOverride::getPlugin` so mini-templates authored through AI render through the
-front engine. AI-generated CSS is attached at render time by
-`MelisAICommunityExtensionsAttachAIGeneratedCssListener`. It exposes no drag-and-drop templating
-plugin of its own — see [Plugins](/guide/plugins).
+The module also registers a `MelisPluginRendererOverride` so AI assets are injected correctly during plugin rendering.
 
 ## MCP server
 
-`config/mcp.tools.php` registers a stdio MCP server (`minitemplate_creator`, entry point
-`mcp/minitemplatecreator/bin/server.php`) and merges four function declarations into the
-`melisaiengine` config so the **minitemplatecreator** agent can call them:
+A stdio MCP server `minitemplate_creator` (entry point `mcp/minitemplatecreator/bin/server.php`) is registered in `config['mcp']['servers']`. The tools below are declared in `function_declarations` with `mcp: true`:
 
-| Tool | Role |
-| --- | --- |
-| `readSiteAssets` | Selects and reads a small set of relevant CSS/JS/view assets for a site module given a template request. |
-| `getSitePublicUrl` | Resolves a site module's public URL/domain for visual context. |
-| `uploadMinitemplateImages` | Saves attached images (data URL / base64 / HTTP URL) to the mini-template temp dir and returns a web path. |
-| `renderMinitemplatePreview` | Triggers a visual preview of the mini-template being authored. |
+| Tool | Parameters | Purpose |
+| --- | --- | --- |
+| `readSiteAssets` | `siteModule`, `templateRequest` | Returns the site's relevant CSS/JS/view files so the AI matches the real design. |
+| `getSitePublicUrl` | `siteModule` | Returns the site's public URL/domain for visual inspection before generating. |
+| `uploadMinitemplateImages` | `siteModule`, `image`, `filename` | Saves an image (base64/data-URL/HTTP) under the AI temp dir and returns a web path for `<img src>`. |
+| `renderMinitemplatePreview` | `siteModule` | Triggers the editor preview of the generated template. |
 
-See [MCP](/guide/mcp).
+The `minitemplatecreator` agent also has the engine's filesystem tools (`createFile` / `readFile` / `updateFiles` / …) in its allow-list.
 
 ## Database tables
 
-This module creates **no `melis_*` tables of its own**. Its `install/dbdeploy/` deltas only insert
-and update **agent/instance/scenario** rows in the tables owned by `melis-ai`
-(`melis_ai_agents`, `melis_ai_instances`, `melis_ai_instance_trans`, `melis_ai_scenario_steps`,
-`melis_ai_scenario_steps_datas`, `melis_ai_scenario_steps_datas_entryexit`, `melis_ai_files`),
-seeding the `newscontentcreator` and `minitemplatecreator` agents. At runtime it reads MelisCmsNews
-data via `melis_cms_news` / `melis_cms_site`.
+This module creates no tables of its own. Its dbdeploy deltas insert rows into the tables owned by `melis-ai`:
+
+| Table | Holds |
+| --- | --- |
+| `melis_ai_instances` | The seeded `minitemplatecreator` and `newscontentcreator` instances. |
+| `melis_ai_agents` | The seeded agents for the two instances. |
+
+At runtime, news data is accessed via `NewsTable` (`getNewsData($newsId)`), which joins the site table to resolve the `siteModule` needed to place generated images.
 
 ## Example
 
-Render the **newscontentcreator** chat so the agent writes back into a specific news paragraph
-field (the pattern used by `NewsController::renderAiChatAction`):
+Open the `newscontentcreator` chat scoped to an article and wired to a specific paragraph field:
 
 ```php
-// mai_instance_id is suffixed with |{newsId} to isolate the session per article
-$view->maiInstanceId = 'newscontentcreator|' . $newsId;
+// Suffix the instance ID with the news ID to isolate the session per article.
+$instanceId = 'newscontentcreator|' . $newsId;
 
-// exitParamArr tells the agent where to return its answer in the UI
-$view->exitParamArr = [
-    'masse_exit_input_1'     => $paragraphField,                    // e.g. 'news_paragraph_1'
+// exitParamArr routes the agent answer back into the target paragraph field.
+$exitParamArr = [
+    'masse_exit_input_1'     => $paragraphField,             // e.g. 'news_paragraph_1'
     'masse_exit_js_callback' => "setParagraphContent($paragraphField)",
 ];
 
-// extraEntryParam seeds the prompt and optional image context
-$view->extraEntryParam = [
-    'custom_text'  => 'Generate content for paragraph 1 of the news',
-    'custom_files' => $images,   // local paths or public URLs
-];
-```
-
-The view renders the chat with the Melis AI Engine helper:
-
-```php
-<?= $this->AIChatViewHelper(
-    'newscontentcreator|' . $newsId,
+// Render the chat via the engine view helper.
+echo $this->AIChatViewHelper(
+    $instanceId,
     null,
-    $this->extraEntryParam,
+    ['custom_text' => '...', 'custom_files' => $images],
     false,
-    $this->exitParamArr
-) ?>
+    $exitParamArr
+);
 ```
+
+The general pattern: (1) inject a `generateWithAIBtn` via `app.toolstree.php` + an `EVENT_FINISH` listener; (2) open `AIChatViewHelper(<instance>, …)` with exit params that route the answer back into the host field; (3) give the agent MCP tools that expose host context; (4) manage generated assets' temp→permanent lifecycle with CMS event listeners.
 
 ## Key files
 
 | Concern | Path |
 | --- | --- |
-| Module config (routes, controllers, table alias, view helper) | `vendor/melisplatform/melis-ai-community-extensions/config/module.config.php` |
-| Backoffice integration points (modals, jscallbacks) | `vendor/melisplatform/melis-ai-community-extensions/config/app.interface.php` |
-| MCP server + function declarations | `vendor/melisplatform/melis-ai-community-extensions/config/mcp.tools.php` |
-| News AI controller | `vendor/melisplatform/melis-ai-community-extensions/src/Controller/NewsController.php` |
-| Mini-template AI controller | `vendor/melisplatform/melis-ai-community-extensions/src/Controller/MiniTemplateController.php` |
-| Plugin-renderer override | `vendor/melisplatform/melis-ai-community-extensions/src/Controller/MelisPluginRendererOverrideController.php` |
+| Module config | `vendor/melisplatform/melis-ai-community-extensions/config/module.config.php` |
+| Backoffice UI injections | `vendor/melisplatform/melis-ai-community-extensions/config/app.toolstree.php` |
+| Interface (button + modal wiring) | `vendor/melisplatform/melis-ai-community-extensions/config/app.interface.php` |
+| MCP tools declaration | `vendor/melisplatform/melis-ai-community-extensions/config/mcp.tools.php` |
+| Mini-template controller | `vendor/melisplatform/melis-ai-community-extensions/src/Controller/MiniTemplateController.php` |
+| News controller | `vendor/melisplatform/melis-ai-community-extensions/src/Controller/NewsController.php` |
 | Listeners | `vendor/melisplatform/melis-ai-community-extensions/src/Listener/` |
-| "Generate with AI" button helper | `vendor/melisplatform/melis-ai-community-extensions/src/View/Helper/MelisGenerateWithAIBtnHelper.php` |
+| Generate-with-AI button helper | `vendor/melisplatform/melis-ai-community-extensions/src/View/Helper/MelisGenerateWithAIBtnHelper.php` |
 | News table gateway | `vendor/melisplatform/melis-ai-community-extensions/src/Model/Tables/NewsTable.php` |
-| MCP implementation | `vendor/melisplatform/melis-ai-community-extensions/mcp/minitemplatecreator/` |
+| MCP server entry point | `vendor/melisplatform/melis-ai-community-extensions/mcp/minitemplatecreator/bin/server.php` |
+| AI assets directory | `public/miniTemplatesTinyMce/AI/{siteModule}/{temp\|css\|js\|images}/` |
 | Install deltas (seed agents) | `vendor/melisplatform/melis-ai-community-extensions/install/dbdeploy/` |
+
+See also: [MelisAIEngine](/reference/modules/melis-ai-engine), [MelisAI](/reference/modules/melis-ai), [MelisAIToolCreator](/reference/modules/melis-ai-tool-creator), [MelisCms](/reference/modules/melis-cms), [MelisCmsNews](/reference/modules/melis-cms-news)

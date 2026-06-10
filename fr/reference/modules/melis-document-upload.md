@@ -4,7 +4,7 @@
 > stocker et servir les fichiers téléversés, et les rattacher aux réponses de MelisFormCreator.
 > Paquet `melisplatform/melis-document-upload`.
 
-## Objectif
+## Présentation
 
 `MelisDocumentUpload` permet de définir des **configurations de téléversement de documents** (un nom,
 une taille maximale autorisée, une stratégie de stockage et un type), puis de collecter, stocker et
@@ -64,7 +64,7 @@ L'édition se fait dans des modales (`melis_document_uploaded_modal`,
 Trois listeners (enregistrés dans `src/Module.php` sur la route `melis-backoffice`) assurent cette
 liaison : `DeleteListener`, `DocumentFormCreatorListener`, `DocumentFormCreatorInstructionListener`.
 
-## Front-office
+## Front office
 
 Le module n'est pas un plugin de templating. Les fichiers téléversés sont exposés via une **URL à
 token** et un view helper :
@@ -117,7 +117,7 @@ if ($res['success']) {
 
 ## Fichiers clés
 
-| Sujet | Chemin |
+| Élément | Chemin |
 | --- | --- |
 | Config module / routes / services | `vendor/melisplatform/melis-document-upload/config/module.config.php` |
 | Arbre d'outils & interface back-office | `vendor/melisplatform/melis-document-upload/config/app.toolstree.php`, `config/app.interface.php` |

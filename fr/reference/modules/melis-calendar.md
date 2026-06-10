@@ -1,109 +1,63 @@
 # MelisCalendar
 
-> Outil calendrier en backoffice et widget de tableau de bord pour planifier des événements sur la plateforme.
-> Paquet : `melisplatform/melis-calendar`.
+> Outil de planification en back-office avec calendrier glisser-déposer et widget de tableau de bord. Paquet `melisplatform/melis-calendar`.
 
-## Objectif
+## Présentation
 
-MelisCalendar ajoute un outil **Calendrier** en backoffice (basé sur FullCalendar) où les
-utilisateurs créent, replanifient et suppriment des événements datés, ainsi qu'un **widget de
-tableau de bord** qui met en avant les événements à venir. Il expose aussi un petit service public
-(`MelisCalendarService`) pour que d'autres modules puissent créer ou mettre à jour des événements
-depuis leur propre code. Les événements sont stockés dans une unique table `melis_calendar`.
+MelisCalendar fournit une grille de calendrier interactive dans le back-office où les utilisateurs créent des événements datés, les déplacent pour les replanifier et les suppriment. Un widget de tableau de bord associé affiche les événements à venir sans avoir à ouvrir l'outil complet. Le module expose `MelisCalendarService` afin que d'autres modules puissent créer, replanifier ou supprimer des événements de manière programmatique, et déclenche un événement de sauvegarde auquel du code externe peut se connecter pour envoyer des notifications ou synchroniser des données.
 
 ## Activation
 
-C'est un module Laminas standard. Il figure déjà dans `config/melis.module.load.php` :
+Ajouter dans `config/melis.module.load.php` :
 
 ```php
-'MelisCalendar',
+return [
+    'MelisCalendar',
+];
 ```
 
-Sa seule dépendance est `melisplatform/melis-core` (`^5.2`) ; l'installation via Composer l'inclut
-et la table `melis_calendar` est créée par les hooks dbdeploy du module (voir
-[Référence des modules](/fr/reference/modules)).
+La seule dépendance requise est `melisplatform/melis-core` (`^5.2`).
 
-## Services clés
+## Services principaux
 
 | Alias de service | Rôle |
 | --- | --- |
-| `MelisCalendarService` | Créer / replanifier / supprimer des événements. Méthodes : `addCalendarEvent($postValues)`, `reschedCalendarEvent($postValues)` (déplace un événement par `cal_id` + nouvelles dates de début/fin), `deleteCalendarEvent($postValues)` (par `cal_id`). |
-| `MelisCalendarTable` | Accès aux données de `melis_calendar` (étend `MelisGenericTable`). Méthodes : `retrieveDashboardCalendarEvents()`, `retrieveCalendarEvents()`, `getEventRecentAdded()`. |
+| `MelisCalendarService` | Créer, replanifier et supprimer des événements du calendrier. |
 
-Utiliser le service depuis un autre module :
+### Méthodes du service
 
-```php
-$calendarService = $this->getServiceManager()->get('MelisCalendarService');
-$calendarService->addCalendarEvent($postValues);
-```
-
-## Backoffice
-
-L'outil est déclaré dans `config/app.interface.php` et `config/app.tools.php`, et se trouve sous la
-section **Marketing** de l'arbre des outils. Les actions backoffice sont servies par
-`MelisCalendar\Controller\Calendar` (`CalendarController`) et
-`MelisCalendar\Controller\ToolCalendar` (`ToolCalendarController`).
-
-| melisKey | Rôle |
+| Méthode | Rôle |
 | --- | --- |
-| `meliscalendar_leftnemu` | Entrée du menu de gauche (`render-calendar-leftmenu`). |
-| `meliscalendar_tool` | Conteneur de l'outil (`render-calendar`). |
-| `melistoolcalendar_tool_calendar_content` | La vue FullCalendar (`render-calendar-tool-calendar-content`, callback JS `initCalendarTool();`). |
-| `melistoolcalendar_tool_create_form` | Panneau de formulaire de création d'événement (`render-calendar-tool-create-form`). |
-| `melistoolcalendar_tool_recent_added` | Panneau des événements récemment ajoutés (`render-calendar-tool-recent-added`). |
-| `meliscalendar_tool_edit_event_modal` | Modale d'édition d'événement (`render-calendar-edit-event-modal`). |
+| `addCalendarEvent()` | Crée un nouvel événement. |
+| `reschedCalendarEvent()` | Met à jour les dates d'un événement existant. |
+| `deleteCalendarEvent()` | Supprime un événement. |
 
-`ToolCalendarController` gère les points d'accès AJAX : `saveEvent`, `reschedEvent`, `deleteEvent`,
-`searchCalendarEvent`, `getEventTitle`, `retrieveCalendarEvents`, `retrieveDashboardCalendarEvents`.
-À l'enregistrement, il déclenche l'événement `meliscalendar_save_event_end` (voir
-[Événements & listeners](#événements--listeners)).
+## Back-office
 
-## Plugin de tableau de bord
+L'outil **Calendrier** est accessible via le menu du back-office → MelisMarketing → Calendar (icône calendrier). Il est construit sur FullCalendar avec Moment.js pour le rendu de l'interface.
 
-`MelisCalendarEventsPlugin` (`src/Controller/DashboardPlugins/MelisCalendarEventsPlugin.php`)
-étend `MelisCoreDashboardTemplatingPlugin`. Son action `calendarEvents()` rend le template
-`melis-calendar/dashboard/calendar-events` (callback JS `initDashboardCalendar()`). Il est déclaré
-sous l'interface `melis_dashboardplugin` (section `MelisMarketing`) dans
-`config/dashboard-plugins/MelisCalendarEventsPlugin.config.php` et enregistré comme controller
-plugin dans `module.config.php`. Voir [Plugins](/fr/guide/plugins).
-
-## Éléments de formulaire
-
-Le module enregistre une factory d'élément de formulaire dans `module.config.php` :
-
-| Élément de formulaire | Rôle |
+| Fonctionnalité | Description |
 | --- | --- |
-| `MelisCalendarDraggableInput` | Champ texte par glisser-déposer utilisé dans le formulaire de création d'événement (`config/app.forms.php`, formulaire `melicalendar_event_form`). |
+| Grille de calendrier | Vue mensuelle/hebdomadaire interactive avec replanification par glisser-déposer. |
+| Formulaire de création d'événement | Formulaire acceptant un titre ainsi que des dates de début et de fin. |
+| Liste des derniers ajouts | Panneau listant les événements créés le plus récemment. |
+| Widget de tableau de bord | Widget Événements du calendrier disponible via le sélecteur de plugins du tableau de bord ; affiche les événements à venir en un coup d'œil. |
 
 ## Événements & listeners
 
-`MelisCalendarFlashMessengerListener` (attaché dans `src/Module.php`) écoute sur l'identifiant
-d'événement partagé `MelisCalendar` l'événement `meliscalendar_save_event_end` et transmet le
-résultat au flash messenger de `MelisCore`. D'autres modules peuvent s'abonner au même événement :
+Un événement `meliscalendar_save_event_end` est déclenché après chaque opération de sauvegarde. D'autres modules peuvent s'y abonner pour envoyer des notifications ou synchroniser un calendrier externe :
 
 ```php
 $sharedEvents->attach('MelisCalendar', 'meliscalendar_save_event_end', function ($e) {
-    $sm     = $e->getTarget()->getServiceManager();
     $params = $e->getParams();
-    // code personnalisé
+    // logique personnalisée de notification ou de synchronisation
 }, 10);
 ```
 
 ## Tables de base de données
 
-| Table | Rôle |
+| Table | Contenu |
 | --- | --- |
-| `melis_calendar` | Une ligne par événement : `cal_id` (PK), `cal_event_title`, `cal_date_start`, `cal_date_end`, `cal_created_by`, `cal_last_update_by`, `cal_date_last_update`, `cal_date_added`. |
+| `melis_calendar` | Une ligne par événement ; inclut des champs d'audit pour suivre la création et la dernière modification. |
 
-## Fichiers clés
-
-| Sujet | Chemin |
-| --- | --- |
-| Service | `vendor/melisplatform/melis-calendar/src/Service/MelisCalendarService.php` |
-| Modèle de table | `vendor/melisplatform/melis-calendar/src/Model/Tables/MelisCalendarTable.php` |
-| Contrôleurs de l'outil | `vendor/melisplatform/melis-calendar/src/Controller/CalendarController.php`, `.../ToolCalendarController.php` |
-| Plugin de tableau de bord | `vendor/melisplatform/melis-calendar/src/Controller/DashboardPlugins/MelisCalendarEventsPlugin.php` |
-| Listener | `vendor/melisplatform/melis-calendar/src/Listener/MelisCalendarFlashMessengerListener.php` |
-| Config outil / interface | `vendor/melisplatform/melis-calendar/config/app.interface.php`, `.../app.tools.php`, `.../app.forms.php` |
-| Config tableau de bord | `vendor/melisplatform/melis-calendar/config/dashboard-plugins/MelisCalendarEventsPlugin.config.php` |
-| SQL d'installation | `vendor/melisplatform/melis-calendar/install/sql/setup_structure.sql` |
+Voir aussi : [melis-core](/fr/reference/modules/melis-core)

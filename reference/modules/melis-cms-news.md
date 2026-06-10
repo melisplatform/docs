@@ -1,23 +1,29 @@
 # MelisCmsNews
 
-> News / blog posts for Melis sites, plus the front-office templating plugins that display them.
-> Package `melisplatform/melis-cms-news`.
+> News / blog system for Melis sites, with backoffice authoring and three front-office display
+> plugins. Package `melisplatform/melis-cms-news`.
 
 ## Purpose
 
-MelisCmsNews adds a **News** tool to the backoffice where editors create and manage news/blog
-posts (title, texts, paragraphs, images, documents, categories, tags, sites, SEO and a publish /
-unpublish window). Posts are surfaced on the front office through three drag-and-drop templating
-plugins (latest news, news list, single news). It also ships SEO routing so each post gets its own
-URL, a publication workflow (validation comments), and a GDPR auto-delete hook.
+MelisCmsNews provides a **News** tool in the backoffice where editors write and manage multilingual
+news articles (titles, rich-text paragraphs, images, documents, publish/unpublish scheduling and
+SEO). Articles are shown on the front office through three ready-to-use templating plugins: a
+latest-news teaser, a paginated news list, and a single-article detail page. SEO-friendly URLs and
+per-article meta tags are handled automatically through dedicated listeners.
 
 ## Enable it
 
-It is a standard Laminas module listed in `config/melis.module.load.php` (it ships enabled in the
-skeleton). To toggle it, ensure `'MelisCmsNews'` is present in that array. It depends on
-`melis-core`, `melis-engine`, `melis-front` and `melis-cms` (see `composer.json`), and integrates
-optionally with `melis-cms-slider`, `melis-cms-category2` and `melis-cms-comments` when those are
-installed. See [Module reference](/reference/modules) and [Build a site](/guide/build-a-site).
+Add to `config/melis.module.load.php`:
+
+```php
+return [
+    'MelisCmsNews',
+];
+```
+
+Requires `melis-core`, `melis-engine`, `melis-front`, and `melis-cms` (`^5.2`), plus
+`laminas/laminas-paginator`. Optional integrations activate when `MelisCmsSlider`, the Melis
+category module, `MelisCmsTag`, or `MelisCmsComments` are also installed.
 
 ## Key services
 
@@ -25,88 +31,118 @@ Registered as `service_manager` aliases in `config/module.config.php`.
 
 | Service alias | Role |
 | --- | --- |
-| `MelisCmsNewsService` | Main CRUD/query service for posts. Methods: `getNewsList(...)` (filter by status, lang, date window, site, search; supports paging + `count`), `getNewsById($newsId, $langId)`, `getNewsByIdArray(array $ids, $langId, $where)`, `saveNews($news, $newsId)`, `deleteNewsById($newsId)`, `getPostText($newsId)`, `getNewsDetailsPagesBySite($siteId)`. |
-| `MelisCmsNewsSeoService` | Per-post SEO + URL building. Methods: `getPageLink($idPage, $newsId, $absolute)`, `getSeoData($newsId, $idPage)`, `updateTitleAndDescription($newsId, $idPage, $contentGenerated)`. |
+| `MelisCmsNewsService` | Main CRUD/query service. Read, create, update and delete articles; query by site, language, date range, status. Every method fires `*_start` / `*_end` events via `MelisGeneralService`. |
 
-Table gateways are also aliased: `MelisCmsNewsTable`, `MelisCmsNewsTextsTable`,
-`MelisCmsNewsSeoTable`, `MelisCmsNewsCategoryTable`, `MelisCmsNewsTagsTable`.
+Table gateway aliases: `MelisCmsNewsTable`, `MelisCmsNewsTextsTable`, `MelisCmsNewsSeoTable`,
+`MelisCmsNewsCategoryTable`, `MelisCmsNewsTagsTable`.
 
 ## Backoffice
 
-The tool is mounted under the CMS tools tree (`app.interface.php`) as section
-`meliscms_news_tool_section` (icon `fa-newspaper-o`), with the list interface `meliscmsnews_list`
-and the post editor `meliscmsnews`. Controllers (in `config/module.config.php`):
+The **News** tool is accessible from the left menu under **CMS tools** (newspaper icon). It opens
+on a filterable list of all articles (filter by site, search text, display limit), with per-row
+info and delete actions. The post editor is organised into tabs:
 
-| Controller | Role |
+| Tab | Content |
 | --- | --- |
-| `MelisCmsNews\Controller\MelisCmsNewsList` | The list / table tool (`renderNewsListData` AJAX feed, filters, action buttons). |
-| `MelisCmsNews\Controller\MelisCmsNews` | The post editor: properties, categories, tags, sites, media, texts, SEO and preview tabs. |
-| `MelisCmsNews\Controller\MelisCmsNewsWorkflowComments` | Workflow validation comments / timeline for a post. |
+| Properties | Publish / unpublish dates and site assignment |
+| Texts | Per-language title, subtitle and up to 10 rich-text paragraphs |
+| Medias | Up to 3 images and 3 documents (stored under `/media/news/`) |
+| SEO | Friendly URL, meta title/description, redirect and canonical |
+| Preview | In-iframe preview of the saved article (available after first save) |
 
-The list table (`app.tools.php`, tool key `meliscmsnews_list_table`) shows columns `cnews_id`,
-`cnews_status`, `cnews_title`, `cnews_creation_date`, `cnews_publish_date`, `cnews_unpublish_date`
-and the site label, with info / delete / workflow row actions. A **DashboardLatestComments**
-controller plugin extends the MelisCmsComments dashboard widget. See
-[Create a tool](/guide/create-a-tool).
+The **Medias** and **Preview** tabs are only available after the article has been saved for the
+first time.
 
 ## Front office
 
-Three templating plugins (controller plugins extending `MelisTemplatingPlugin`) — see
-[Plugins](/guide/plugins). Each has a matching view helper alias for direct use in `.phtml`.
+Three templating plugins extend `MelisTemplatingPlugin`; each has a controller plugin, a view
+helper and a config file under `config/plugins/`.
 
-| Plugin (controller plugin) | XML key (`pluginXmlDbKey`) | View helper | Front template | Role |
-| --- | --- | --- | --- | --- |
-| `MelisCmsNewsLatestNewsPlugin` | `MelisCmsNewsLatestNews` | `MelisCmsNewsLatestPlugin` | `MelisCmsNews/latestnews` | The latest N posts for a site/page. |
-| `MelisCmsNewsListNewsPlugin` | `MelisCmsNewsListNews` | `MelisCmsNewsListPlugin` | `MelisCmsNews/listnews` | Paginated/filtered list of posts. |
-| `MelisCmsNewsShowNewsPlugin` | `MelisCmsNewsShowNews` | `MelisCmsNewsShowNewsPlugin` | `MelisCmsNews/shownews` | A single post (detail page). |
+| Plugin | Controller plugin | View helper | Config tabs |
+| --- | --- | --- | --- |
+| Latest News | `MelisCmsNewsLatestNewsPlugin` | `MelisCmsNewsLatestPlugin` | Properties, Filters |
+| News List | `MelisCmsNewsListNewsPlugin` | `MelisCmsNewsListPlugin` | Properties, Pagination, Filters |
+| News Detail | `MelisCmsNewsShowNewsPlugin` | `MelisCmsNewsShowNewsPlugin` | Properties |
 
-All three share `configPluginKey = 'meliscmsnews'`. SEO-friendly URLs and per-post meta are wired
-through listeners (`MelisCmsNewsSEORouteListener`, `MelisCmsNewsRenderPageListener`,
-`MelisCmsNewsMetaPageListener`, `MelisCmsNewsSeoRedirectUrlListener`), all attached in
-`src/Module.php`.
+Plugin config params: `template_path`, `site_id`, `pageIdNews` (detail page link), `column`,
+`order`, `limit`, `date_min`, `date_max`, `search`, plus `nbPerPage` / `nbPageBeforeAfter` (News
+List only). Config is persisted in the page XML via `loadDbXmlToPluginConfig()` /
+`savePluginConfigToXml()`.
+
+SEO routing and per-article meta tags are wired in `src/Module.php` via:
+`MelisCmsNewsSEORouteListener`, `MelisCmsNewsRenderPageListener`, `MelisCmsNewsMetaPageListener`,
+`MelisCmsNewsSeoRedirectUrlListener`.
 
 ## Database tables
 
-Created by the dbdeploy deltas under `install/dbdeploy/`.
+Base structure in `install/sql/setup_structure.sql`; migrations in `install/dbdeploy/`.
 
-| Table | Role |
+| Table | Holds |
 | --- | --- |
-| `melis_cms_news` | Core post row (status, dates, site, relations). |
-| `melis_cms_news_texts` | Per-language texts/paragraphs for a post. |
-| `melis_cms_news_seo` | Per-post SEO data (title, description, URL). |
-| `melis_cms_news_category` | News categories. |
+| `melis_cms_news` | Core article row: status, publish/unpublish dates, site, image1-3, documents1-3, slider id |
+| `melis_cms_news_texts` | Per-language texts: title, subtitle, paragraphs 1-10, paragraph order, lang |
+| `melis_cms_news_seo` | Per-language SEO: URL, redirect, 301 flag, meta title/description, canonical |
+| `melis_cms_news_category` | Article ↔ category link (optional category feature) |
 
 ## Example
 
-Render the 3 most recent published posts of the current language directly from a view, via the
-list service:
-
 ```php
-// In a controller / service that has the service manager
-$newsService = $sm->get('MelisCmsNewsService');
-$latest = $newsService->getNewsList(
-    'published',   // status
-    $langId,       // langId
-    null, null, null, null, // date filters
-    false,         // unpublishFilter
-    0, 3,          // start, limit
-    'cnews_publish_date', 'DESC'
+$news = $this->getServiceManager()->get('MelisCmsNewsService');
+
+// Latest 10 published articles for site 1, French, newest first:
+$list = $news->getNewsList(
+    status: 1, langId: 1, start: 0, limit: 10,
+    orderColumn: 'cnews_publish_date', order: 'DESC', siteId: 1
 );
+
+// Fetch one article (all languages, or one language):
+$all = $news->getNewsById(42);
+$fr  = $news->getNewsById(42, 1);
+
+// Create / update / delete:
+$id = $news->saveNews($data, $newsId);   // $newsId null → create
+$ok = $news->deleteNewsById(42);         // also removes texts + SEO rows
+
+// Utility:
+$txt  = $news->getPostText(42);
+$pages = $news->getNewsDetailsPagesBySite(1);  // NEWS_DETAIL-type pages for a site
 ```
 
-For pages, prefer dropping the **Latest news** / **News list** / **Show news** templating plugins
-into a `MelisDragDropZone` rather than calling the service by hand — see [Plugins](/guide/plugins).
+Hook into a service event to extend behaviour (e.g. ping a search index after save):
+
+```php
+$sharedEvents->attach('MelisCmsNews', 'melis_cms_news_save_news_end', function ($e) {
+    $params = $e->getParams(); // includes 'news', 'newsId', 'results'
+}, 50);
+```
+
+Other event identifiers follow the same `melis_cms_news_[method]_start/end` pattern:
+`melis_cms_news_get_news_list_*`, `melis_cms_news_get_news_by_id_*`,
+`melis_cms_news_get_news_by_id_array_*`, `melis_cms_news__delete_news_by_id_*` (double
+underscore), `melis_cms_news_get_post_text_*`, `melis_cms_news_get_news_details_pages_*`.
+
+## Micro-services
+
+`config/app.microservice.php` exposes `getNewsList` and `getNewsById` over the Melis
+micro-service bus with auto-generated forms and input filters. Form factories `MelisCmsNewsSelect`
+and `MelisCmsNewsBOSelect` are in `src/Form/Factory/`.
 
 ## Key files
 
 | Concern | Path |
 | --- | --- |
-| Module config (services, controllers, plugins, view helpers) | `vendor/melisplatform/melis-cms-news/config/module.config.php` |
+| Module config (services, gateways, plugins, view helpers) | `vendor/melisplatform/melis-cms-news/config/module.config.php` |
 | Backoffice tool tree | `vendor/melisplatform/melis-cms-news/config/app.interface.php` |
 | List table config | `vendor/melisplatform/melis-cms-news/config/app.tools.php` |
-| Main service | `vendor/melisplatform/melis-cms-news/src/Service/MelisCmsNewsService.php` |
-| SEO service | `vendor/melisplatform/melis-cms-news/src/Service/MelisCmsNewsSeoService.php` |
-| Templating plugins | `vendor/melisplatform/melis-cms-news/src/Controller/Plugin/` |
+| Micro-service config | `vendor/melisplatform/melis-cms-news/config/app.microservice.php` |
 | Plugin configs | `vendor/melisplatform/melis-cms-news/config/plugins/` |
-| Listeners (SEO routing, GDPR, workflow) | `vendor/melisplatform/melis-cms-news/src/Listener/` |
-| Install deltas | `vendor/melisplatform/melis-cms-news/install/dbdeploy/` |
+| Main service | `vendor/melisplatform/melis-cms-news/src/Service/MelisCmsNewsService.php` |
+| Front plugins | `vendor/melisplatform/melis-cms-news/src/Controller/Plugin/` |
+| View helpers | `vendor/melisplatform/melis-cms-news/src/View/Helper/` |
+| Listeners (SEO, GDPR, slider cleanup) | `vendor/melisplatform/melis-cms-news/src/Listener/` |
+| Table gateways | `vendor/melisplatform/melis-cms-news/src/Model/Tables/` |
+| Install SQL | `vendor/melisplatform/melis-cms-news/install/sql/setup_structure.sql` |
+| DB migrations | `vendor/melisplatform/melis-cms-news/install/dbdeploy/` |
+
+See also: [melis-cms](/reference/modules/melis-cms), [melis-front](/reference/modules/melis-front),
+[melis-engine](/reference/modules/melis-engine), [melis-core](/reference/modules/melis-core)

@@ -1,10 +1,10 @@
 # MelisSmallBusiness
 
-> Fonctionnalités de collaboration en backoffice pour le CMS — versionnage de pages, **workflow**
+> Fonctionnalités de collaboration en back-office pour le CMS — versionnage de pages, **workflow**
 > de validation, **commentaires** de page, **verrouillage** de page, **rôles utilisateurs** et une
 > **médiathèque** TinyMCE. Package `melisplatform/melis-small-business`.
 
-## Objectif
+## Présentation
 
 `MelisSmallBusiness` ajoute des outils de collaboration pour petites équipes / petites entreprises
 par-dessus l'éditeur de pages du CMS. Il conserve des **versions** des pages publiées (pour pouvoir
@@ -28,16 +28,16 @@ return [
 
 Il dépend de `melis-core`, `melis-engine`, `melis-front` et `melis-cms` (voir `composer.json`), et
 ses tables sont créées via dbdeploy (`extra.dbdeploy = true`). Le `Module::init()` attache
-`MelisSBAddModuleConfigListener` puis, sur les routes backoffice, un ensemble de listeners de
+`MelisSBAddModuleConfigListener` puis, sur les routes back-office, un ensemble de listeners de
 l'éditeur CMS (sauvegarde de versionnage, verrou de page, workflow, arbre des droits, config
 TinyMCE…).
 
-## Services clés
+## Services principaux
 
 | Alias de service | Rôle |
 | --- | --- |
-| `MelisEnginePage` | Le module **surcharge** le service de page du moteur par `MelisSBPageService` (étend `MelisPageService`). Sa méthode `getDatasPage($idPage, $type = 'published')` permet à l'éditeur de lire les données de page depuis le stockage de versionnage comme depuis la page en ligne. |
-| `MelisSBPageCommentService` | Commentaires de page : `getPageComments($idPage, $newsId, $blogId)`, `setPageComments(array $data, $commentType = 1)`, `getPageCommentForm()`. |
+| `MelisEnginePage` | Le module **surcharge** le service de page du moteur par `MelisSBPageService`. Lorsque la route est la route de prévisualisation de version (`…/id/{idpage}/preview/idversion/{idversion}`), il retourne l'arbre de page versionné depuis `melis_sb_page_versioning` ; sinon il se comporte exactement comme le parent. |
+| `MelisSBPageCommentService` | Commentaires de page : `getPageComments()` (enrichit avec l'utilisateur + la date formatée), `setPageComments()` (enregistre avec l'utilisateur courant comme auteur). |
 
 Les passerelles de tables sont aussi enregistrées comme services : `MelisPageComment`,
 `MelisPageCommentType`, `MelisPageLockTable`, `MelisPageVersioningTable`, `MelisUserRole`,
@@ -48,7 +48,7 @@ En aliasant `MelisEnginePage` vers sa propre classe, ce module remplace le servi
 pour toute l'application tant qu'il est activé. À garder en tête dans l'ordre des modules.
 :::
 
-## Backoffice
+## Back-office
 
 Les outils et interfaces sont déclarés dans `config/app.tools.php` et `config/app.interface.php`
 (les contrôleurs sont de simples invokables sous `MelisSmallBusiness\Controller\…`).
@@ -60,6 +60,15 @@ Les outils et interfaces sont déclarés dans `config/app.tools.php` et `config/
 | `melissb_page_comments` | `PageComments::render-page-comments` | Onglet **Commentaires** de l'éditeur de page (ajout + fil chronologique). |
 | `melissb_medialib` | `MediaLibrary::renderPageMediaLibrary` | Outil **médiathèque** (TinyMCE MoxieManager) pour parcourir / téléverser des fichiers. |
 | `melissb_workflow_modal_content` | `MelisWorkflow::render-workflow-modal-content` | Modale **workflow** : demander une validation, valider, refuser et consulter l'historique. |
+
+Le workflow envoie trois e-mails back-office (définis dans `app.emails.php`) via le service d'e-mail
+BO de MelisCore :
+
+| Code e-mail | Déclencheur | Balises disponibles |
+| --- | --- | --- |
+| `WF_DEMAND` | Une demande de validation est soumise | `USER_TO`, `USER_FROM`, `TYPE`, `DETAILS` |
+| `WF_VALIDATED` | Un approbateur valide une demande | idem |
+| `WF_REFUSED` | Un approbateur refuse une demande | idem |
 
 Le module ajoute aussi un élément de formulaire `MelisMediaUpload` (`melis-media-upload`) avec sa
 factory, son view helper et `MelisMediaUploadValidator`.
@@ -73,12 +82,12 @@ dans `melis_sb_page_locked` pendant qu'un utilisateur l'édite.
 
 | Type | Nom | Rôle |
 | --- | --- | --- |
-| Plugin de dashboard | `MelisSBWorkflowPlugin` | Widget du dashboard backoffice (action `workflow`) listant les demandes de workflow en attente / l'activité récente. Déclaré sous `meliscore_dashboard` (`melissb_dashboard_workflow`) ; voir [Plugins](/fr/guide/plugins). |
+| Plugin de dashboard | `MelisSBWorkflowPlugin` | Widget du dashboard back-office (action `workflow`) listant les demandes de workflow en attente / l'activité récente. Déclaré sous `meliscore_dashboard` (`melissb_dashboard_workflow`) ; voir [Plugins](/fr/guide/plugins). |
 
 Il existe aussi un petit asset front-office (`front.pagelock.js`) enregistré sous `melisfront`, mais
-le module n'a **aucun plugin de templating** front-office — sa surface est le backoffice.
+le module n'a **aucun plugin de templating** front-office — sa surface est le back-office.
 
-## Tables en base de données
+## Tables de base de données
 
 Créées par `install/dbdeploy/126618_melis_sb_install.sql` (repris dans
 `install/sql/setup_structure.sql`).
@@ -91,6 +100,7 @@ Créées par `install/dbdeploy/126618_melis_sb_install.sql` (repris dans
 | `melis_sb_page_comment` | Commentaires attachés à une page. |
 | `melis_sb_page_comment_type` | Types de commentaires (`PAGE`, `WORKFLOW`). |
 | `melis_sb_page_locked` | Verrous de page actifs (quel utilisateur édite quelle page). |
+| `melis_core_user_role` | Rôles nommés (`urole_id`, `urole_name`, `urole_creation_date`, `urole_rights`) — droits stockés en XML, comme l'enregistrement de droits propre à un utilisateur. |
 
 ## Exemple
 
@@ -111,14 +121,16 @@ $commentService->setPageComments(
 
 ## Fichiers clés
 
-| Sujet | Chemin |
+| Élément | Chemin |
 | --- | --- |
 | Bootstrap du module & listeners | `vendor/melisplatform/melis-small-business/src/Module.php` |
 | Routage, services, contrôleurs | `vendor/melisplatform/melis-small-business/config/module.config.php` |
 | Outils (rôles, versionnage) | `vendor/melisplatform/melis-small-business/config/app.tools.php` |
-| Arbre d'interface backoffice | `vendor/melisplatform/melis-small-business/config/app.interface.php` |
+| Arbre d'interface back-office | `vendor/melisplatform/melis-small-business/config/app.interface.php` |
+| Définitions des e-mails workflow | `vendor/melisplatform/melis-small-business/config/app.emails.php` |
 | Service de page (surcharge moteur) | `vendor/melisplatform/melis-small-business/src/Service/MelisSBPageService.php` |
 | Service de commentaires | `vendor/melisplatform/melis-small-business/src/Service/MelisSBPageCommentService.php` |
 | Contrôleurs workflow / versionnage / verrou | `vendor/melisplatform/melis-small-business/src/Controller/` |
+| Plugin de dashboard | `vendor/melisplatform/melis-small-business/src/Controller/DashboardPlugins/MelisSBWorkflowPlugin.php` |
 | Listeners de l'éditeur CMS | `vendor/melisplatform/melis-small-business/src/Listener/` |
 | SQL d'installation | `vendor/melisplatform/melis-small-business/install/dbdeploy/126618_melis_sb_install.sql` |

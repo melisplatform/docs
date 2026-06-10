@@ -1,121 +1,87 @@
 # MelisDbDeploy
 
-> Versioned database deltas (the `changelog` mechanism) for Melis Platform —
-> Composer package `melisplatform/melis-dbdeploy`.
+> Database-migration runner for the Melis platform — applies each module's SQL deltas in order.
+> Package `melisplatform/melis-dbdeploy`.
 
 ## Purpose
 
-`MelisDbDeploy` keeps every module's database schema in sync. Each Melis module ships its schema
-changes as small, ordered SQL files (**deltas**) under `install/dbdeploy/`. After a Composer update
-or a Marketplace install, MelisDbDeploy collects those deltas from all `melisplatform/*` packages,
-applies the ones not yet run, and records each one in a single `changelog` table so it never runs
-twice. Under the hood it drives the [Phing](https://www.phing.info/) `DbDeployTask`.
+`MelisDbDeploy` keeps every module's database schema in sync with the installed code. Each module
+that opts in ships its schema changes as ordered SQL files (**deltas**) under
+`install/dbdeploy/`. MelisDbDeploy discovers those deltas across all modules, applies the ones
+not yet executed, and records each in a changelog table so it is applied exactly once — built on
+top of [Phing](https://www.phing.info/)'s `DbDeployTask`.
+
+It is part of the [MelisCore platform foundation](/reference/modules/melis-core) and has no
+user-facing interface.
 
 ## Enable it
 
-`MelisDbDeploy` is a standard Laminas module. It is listed in `config/melis.module.load.php`:
+Add to `config/melis.module.load.php`:
 
 ```php
 return [
-    // …
     'MelisDbDeploy',
-    // …
 ];
 ```
 
-It depends on `melis-core` (it extends `MelisCore\Service\MelisServiceManager` and reads
-`config/autoload/platforms/*.php` for the DB credentials), on `melis-composerdeploy`
-(`MelisComposerDeploy\MelisComposer` lists the Melis packages), on `melis-asset-manager`
-(`MelisAssetManagerModulesService` provides the Composer instance), and on the Composer requirement
-`phing/phing` (declared in the module's `composer.json`).
+`MelisDbDeploy` depends only on `phing/phing` (`2.17.4`). It has **no** `melis-core` dependency —
+it is a standalone tool invoked by MelisInstaller and by the module install/update flows.
 
-The deploy step is wired into the project's `composer.json` `post-update-cmd`:
+## Opting a module in
+
+A module participates in the migration system by declaring the following in its `composer.json`:
 
 ```json
-"post-update-cmd": [
-    "MelisCore\\ModuleComposerScript::executeScripts",
-    "MelisDbDeploy\\DbDeployOnComposerUpdate::postUpdate"
-]
+"extra": {
+    "dbdeploy": true
+}
 ```
 
-so deltas are applied automatically at the end of every `composer update`. See
-[Module reference](/reference/modules) and [Marketplace](/reference/modules).
-
-## How a delta is written
-
-A delta is a plain `.sql` file in a module's `install/dbdeploy/` folder. The **numeric prefix** of
-the filename is the delta's `change_number` (its order key); the rest is a human description. Real
-examples from the shipped modules:
-
-```
-melis-core/install/dbdeploy/24051501_core_update_platform_table.sql
-melis-document-upload/install/dbdeploy/24012603_document_upload_add_isactive_document.sql
-```
-
-```sql
--- 24051501_core_update_platform_table.sql
-ALTER TABLE `melis_core_platform`
-  ADD `plf_activate_cache` INT NOT NULL DEFAULT '1' AFTER `plf_update_marketplace`;
-```
-
-Higher-numbered deltas run after lower-numbered ones, and only if their `change_number` is not
-already present in `changelog`.
+Its SQL deltas are placed in `install/dbdeploy/*.sql`. Each filename starts with a numeric prefix
+that defines the execution order (e.g. `23051701_create_my_table.sql`).
 
 ## Key services
 
-Registered as `service_manager` aliases in `config/module.config.php`:
-
 | Service alias | Role |
 | --- | --- |
-| `MelisDbDeployDiscoveryService` | Scans all `melisplatform/*` Composer packages, copies their `install/dbdeploy/*.sql` deltas into the runtime `dbdeploy/data/` cache, then delegates to the deploy service. Entry point: `processing($module = null)` (pass a module name to limit it to one package). |
-| `MelisDbDeployDeployService` | Connects to the DB (PDO/MySQL), ensures the `changelog` table exists, and applies pending deltas via Phing's `DbDeployTask`. Key methods: `isInstalled()`, `install()`, `changeLogCount()`, `applyDeltaPath($deltaPath)`. |
-| `ChangelogTable` | `TableGateway` over the `changelog` table (`MelisGenericTable`, primary key `change_number`). |
+| `MelisDbDeployDiscoveryService` | Finds every opted-in module's deltas and copies them to the working location, then delegates to the deploy service. |
+| `MelisDbDeployDeployService` | Connects to the database, ensures the changelog table exists, and applies pending deltas via Phing. |
 
-`MelisDbDeployDeployService` constants worth knowing: `TABLE_NAME = 'changelog'`,
-`OUTPUT_FILENAME = 'melisplatform-dbdeploy.sql'`,
-`OUTPUT_FILENAME_UNDO = 'melisplatform-dbdeploy-reverse.sql'`. It applies deltas as
-`applied_by = 'MelisDbDeploy'`.
+## Example
 
-## How it runs
+```php
+// Discovery — gather deltas from all dbdeploy modules
+$discovery = $sm->get(\MelisDbDeploy\Service\MelisDbDeployDiscoveryService::class);
+$discovery->setComposer($composer);
+$discovery->processing();   // discovers modules and copies their *.sql deltas
 
-Two entry points trigger the same pipeline:
+// Deploy — apply pending deltas
+$deploy = new \MelisDbDeploy\Service\MelisDbDeployDeployService(/* db params */);
+if (!$deploy->isInstalled()) {
+    $deploy->install();                  // creates the changelog table on first run
+}
+$count = $deploy->changeLogCount();      // number of deltas applied so far
+$deploy->applyDeltaPath($pathToDeltas);  // run any not-yet-applied deltas
+```
 
-- **Composer** — `DbDeployOnComposerUpdate::postUpdate()` runs on `post-update-cmd`. It copies every
-  Melis package's deltas into `dbdeploy/data/`, then loops `MelisDbDeployDeployService` until
-  `changeLogCount()` equals the number of cached delta files.
-- **Marketplace** — when a module is installed/updated from the backoffice,
-  `MelisMarketPlaceController` calls
-  `MelisDbDeployDiscoveryService->processing($module)` for that package.
+## When it runs
 
-`Module::run()` exposes the discovery pipeline as a static helper as well. Both paths create the
-runtime `dbdeploy/` folder if missing, create the `changelog` table on first run, and skip any
-delta already recorded.
+MelisDbDeploy is invoked automatically in two scenarios:
 
-## Backoffice
+- **First install** — by **MelisInstaller** during the platform setup wizard.
+- **Module install / update** — triggered through the back-office Modules tool / marketplace and
+  Composer hooks.
 
-None. MelisDbDeploy ships **no** backoffice tool, view, controller plugin, dashboard plugin or
-templating plugin — it is platform plumbing invoked by Composer and by the
-[Marketplace](/reference/modules). It does declare a `diagnostic` entry in `config/diagnostic.config.php`
-(used by the platform self-diagnostic).
-
-## Database tables
-
-| Table | Role |
-| --- | --- |
-| `changelog` | Ledger of applied deltas. Columns: `change_number`, `delta_set`, `start_dt`, `complete_dt`, `applied_by`, `description`; primary key `(change_number, delta_set)`. Created from `data/changelog.sql`. |
-
-Note: unlike most modules, the bookkeeping table is named `changelog` (not `melis_*`) — the name is
-fixed because it is a Phing `DbDeployTask` dependency.
+It is not a user-facing tool and exposes no controllers.
 
 ## Key files
 
 | Concern | Path |
 | --- | --- |
-| Module bootstrap / `run()` | `vendor/melisplatform/melis-dbdeploy/src/Module.php` |
-| Composer post-update hook | `vendor/melisplatform/melis-dbdeploy/src/DbDeployOnComposerUpdate.php` |
 | Discovery service | `vendor/melisplatform/melis-dbdeploy/src/Service/MelisDbDeployDiscoveryService.php` |
-| Deploy service (Phing) | `vendor/melisplatform/melis-dbdeploy/src/Service/MelisDbDeployDeployService.php` |
-| `changelog` table model | `vendor/melisplatform/melis-dbdeploy/src/Model/Table/ChangelogTable.php` |
-| `changelog` create SQL | `vendor/melisplatform/melis-dbdeploy/data/changelog.sql` |
-| Service aliases | `vendor/melisplatform/melis-dbdeploy/config/module.config.php` |
-| Example deltas (any module) | `vendor/melisplatform/<module>/install/dbdeploy/*.sql` |
+| Deploy service | `vendor/melisplatform/melis-dbdeploy/src/Service/MelisDbDeployDeployService.php` |
+| Models | `vendor/melisplatform/melis-dbdeploy/src/Model/` |
+| Module config / service aliases | `vendor/melisplatform/melis-dbdeploy/etc/` |
+| Module deltas (any module) | `vendor/melisplatform/<module>/install/dbdeploy/*.sql` |
+
+See also: [MelisCore](/reference/modules/melis-core) · [MelisInstaller](/reference/modules/melis-installer) · [MelisComposerDeploy](/reference/modules/melis-composerdeploy) · [Platform concepts](/guide/concepts)

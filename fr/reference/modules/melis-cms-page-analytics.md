@@ -1,32 +1,33 @@
 # MelisCmsPageAnalytics
 
-> Statistiques de pages par défaut pour les sites Melis CMS — enregistre les vues de page et permet
+> Statistiques de visites de pages pour les sites CMS — enregistre les vues de page et permet
 > à un site de brancher un fournisseur d'analytics externe (par ex. Google Analytics). Paquet
 > `melisplatform/melis-cms-page-analytics`.
 
-## Objectif
+## Présentation
 
 `MelisCmsPageAnalytics` est le traceur de vues de page intégré à la plateforme. À chaque rendu de
-page **front-office**, il enregistre une visite (une par session, par page et par jour) dans
-`melis_cms_page_analytics`, et expose les données dans le backoffice via un outil **Site Analytics**
-et un onglet **Page Analytics** sur chaque page. Il est aussi extensible : par site, vous pouvez
-stocker une clé de fournisseur d'analytics, des réglages et un extrait JavaScript que le module
-injecte dans le `<head>` de la page au moment du rendu — le point d'extension utilisé par des
-fournisseurs additionnels comme Google Analytics.
+page front-office, il enregistre une visite dédupliquée (une fois par session, par page et par jour)
+dans `melis_cms_page_analytics`, et expose les données dans le back-office via un outil **Page
+Analytics** global et un onglet **Page Analytics** sur chaque page CMS. Par site, vous pouvez
+également stocker une clé de fournisseur d'analytics et un extrait JavaScript que le module injecte
+dans le `<head>` de la page au moment du rendu — le point d'extension utilisé par des fournisseurs
+additionnels comme Google Analytics.
 
 ## Activation
 
-C'est un module Laminas standard, déjà listé dans `config/melis.module.load.php` :
+Ajouter dans `config/melis.module.load.php` :
 
 ```php
-'MelisCmsPageAnalytics',
+return [
+    'MelisCmsPageAnalytics',
+];
 ```
 
-Dépendances (d'après `composer.json`) : `melisplatform/melis-core` et `melisplatform/melis-cms`. Le
-module s'appuie aussi à l'exécution sur des services `melis-engine` / `melis-front` (arbre, tables
-de pages, événements de dispatch front). Il fournit des deltas dbdeploy (`"dbdeploy": true`) : ses
-tables sont créées/mises à jour via le [mécanisme de deltas de base de données](/fr/reference/modules).
-Voir [Référence des modules](/fr/reference/modules) et [Construire un site](/fr/guide/build-a-site).
+Dépendances Composer requises : `melisplatform/melis-core ^5.2` et `melisplatform/melis-cms ^5.2`.
+Le module s'appuie aussi à l'exécution sur les services `melis-engine` et `melis-front` (arbre,
+tables de pages, événements de dispatch front). Les tables de base de données sont installées via
+`MelisSetupController` depuis `install/sql/`.
 
 ## Services principaux
 
@@ -34,89 +35,77 @@ Déclarés comme alias `service_manager` dans `config/module.config.php` :
 
 | Alias de service | Rôle |
 | --- | --- |
-| `MelisCmsPageAnalyticsService` | Retourne la configuration d'analytics courante d'un site. `getAnalytics($siteId)` lit la clé de fournisseur active dans `melis_cms_page_analytics_data`, puis la ligne correspondante dans `melis_cms_page_analytics_data_settings` (désérialise `pads_settings`). |
-| `MelisCmsDefaultPageAnalyticsService` | Enregistre une vue de page. `saveAnalyticsData($pageId)` résout le site, vérifie que la page est active, et insère une ligne dans `melis_cms_page_analytics` — une fois par session et par jour — sauf si un fournisseur externe (view id Google Analytics + token) est configuré. |
+| `MelisCmsPageAnalyticsService` | Service principal implémentant le contrat fournisseur. `getAnalytics($siteId)` lit la clé du fournisseur actif dans `melis_cms_page_analytics_data` et la ligne de paramètres correspondante dans `melis_cms_page_analytics_data_settings`. |
+| `MelisCmsDefaultPageAnalyticsService` | Enregistreur intégré. `saveAnalyticsData($pageId)` résout le site, vérifie que la page est active/publiée, et insère une ligne dédupliquée dans `melis_cms_page_analytics` — sauf si un identifiant de vue Google Analytics et un token sont configurés, auquel cas le compteur intégré s'efface. |
+| `MelisCmsPageAnalyticsTable` | Table gateway pour le journal des visites. |
+| `MelisCmsPageAnalyticsDataTable` | Table gateway pour la sélection du fournisseur par site. |
+| `MelisCmsPageAnalyticsDataSettingsTable` | Table gateway pour les paramètres par (site, fournisseur). |
 
-Les deux services étendent `MelisEngineGeneralService` et émettent des événements de début/fin
-(`melis_cms_page_analytics_get_current_analytics_*`, `melis_cms_default_page_analytics_save_*`).
+Les deux services principaux émettent des événements de début/fin :
+`melis_cms_default_page_analytics_save_start` / `melis_cms_default_page_analytics_save_end`.
 
-Les tables modèle sont aussi aliasées : `MelisCmsPageAnalyticsTable` (avec `getData(...)`,
-`getDataByPageId(...)`, `getDataBySessionAndPageId($pageId, $sessionCookie)`),
-`MelisCmsPageAnalyticsDataTable` (`getAnalytics($siteId, $analyticsKey = null)`) et
-`MelisCmsPageAnalyticsDataSettingsTable`.
+## Back-office
 
-## Backoffice
+Configuré dans `config/app.interface.php` et `config/app.tools.php`. Le module ajoute deux éléments
+d'interface :
 
-Le module ajoute un outil **Site Analytics** et un onglet **Page Analytics** par page (configuration
-dans `config/app.interface.php` / `config/app.tools.php`) :
+| Élément | Emplacement | Contenu |
+| --- | --- | --- |
+| Outil **Page Analytics** (`meliscms_page_analytics_tool_display`) | Menu Outils du site sous `meliscms_site_tools_parent_menu` (icône `fa-bar-chart`) | Deux onglets : **Analytiques du site** (tableau des visites : Id, Page id, Nom de la page, Date de visite) et **Paramètres** (sélection du fournisseur + extrait JS). |
+| Onglet **Page Analytics** (`meliscms_page_analytics_tab`) | Éditeur de page CMS → Onglets (icône *stats*) | Visites enregistrées pour la page courante, par date. |
 
-| Élément (melisKey) | Forward |
-| --- | --- |
-| `meliscms_page_analytics_tool_display` (outil Site Analytics, sous le menu des outils de site) | `MelisCmsPageAnalyticsTool::tool-container` |
-| `meliscms_page_analytics_site_analytics_tab_content` (table des vues par site) | `MelisCmsPageAnalyticsTool::tool-content-container-analytics-tab-content` |
-| `meliscms_page_analytics_site_analytics_tab_settings_content` (formulaire des réglages du fournisseur) | `MelisCmsPageAnalyticsTool::tool-content-container-analytics-settings-tab-content` |
-| `meliscms_page_analytics_tab` / `meliscms_page_analytics_tab_display` (onglet de l'éditeur de page) | `MelisCmsPageAnalyticsPageDetailsTool::tool-container` |
-
-Les deux outils DataTable (`MelisCmsPageAnalytics_tool`, `MelisCmsPageAnalytics_page_details`)
-chargent leurs lignes en AJAX depuis `MelisCmsPageAnalyticsToolController::getMelisCmsPageAnalyticsDataAction`
-et `MelisCmsPageAnalyticsPageDetailsToolController::getMelisCmsPageAnalyticsPageDetailsDataAction`.
-Le formulaire de réglages (`getSettingsFormAction`, `saveAction`) persiste, par site, la clé du
-fournisseur, les réglages et l'extrait JS. Voir [Créer un outil](/fr/guide/create-a-tool).
-
-Une route d'installation autonome (`MelisSetupController::setup-form`) est également fournie.
+Le formulaire de l'onglet **Paramètres** (`PageAnalyticsSelect` / `PageAnalyticsSiteSelect`)
+enregistre la clé du fournisseur actif, les paramètres par site et l'extrait `pads_js_analytics`
+dans `melis_cms_page_analytics_data` / `melis_cms_page_analytics_data_settings`.
 
 ## Front office
 
-Il n'y a pas de plugin de templating ni de view helper. Le traçage et l'injection du script sont
-réalisés par un listener d'événements, `MelisCmsPageAnalytics\Listener\MelisCmsPageAnalyticsListener`
-(attaché dans `Module::onBootstrap`), qui s'accroche à deux événements front :
+Il n'existe pas de view helper ni de plugin de templating. Le traçage et l'injection du script sont
+gérés par `MelisCmsPageAnalyticsListener` (attaché dans `Module.php`), qui s'accroche à deux
+événements du pipeline de rendu front :
 
-- `melisfront_site_dispatch_ready` — pour les rendus front uniquement, appelle
-  `MelisCmsDefaultPageAnalyticsService::saveAnalyticsData($pageId)` pour enregistrer la visite.
-- `melis_front_layout` — lit l'extrait `pads_js_analytics` configuré pour le site et l'injecte
-  avant `</head>` de la page rendue.
-
-Pour le rendu front piloté par événements en général, voir [Plugins](/fr/guide/plugins) et
-[Construire un site](/fr/guide/build-a-site).
+| Événement | Priorité | Action |
+| --- | --- | --- |
+| `melisfront_site_dispatch_ready` | `-10000` | Rendus front uniquement — appelle `MelisCmsDefaultPageAnalyticsService::saveAnalyticsData($pageId)` pour enregistrer la visite dédupliquée. |
+| `melis_front_layout` | par défaut | Lit l'extrait `pads_js_analytics` configuré pour le site et l'injecte avant `</head>` du HTML rendu. |
 
 ## Tables de base de données
 
-Créées/mises à jour par `install/dbdeploy/*.sql` :
-
-| Table | Rôle |
-| --- | --- |
-| `melis_cms_page_analytics` | Vues de page enregistrées : `ph_id`, `ph_page_id`, `ph_session_id`, `ph_date_visit`, `ph_site_id`. |
-| `melis_cms_page_analytics_data` | Le fournisseur d'analytics actif par site : `pad_id`, `pad_site_id`, `pad_analytics_key`. |
-| `melis_cms_page_analytics_data_settings` | Configuration du fournisseur par site : `pads_id`, `pads_site_id`, `pads_analytics_key`, `pads_settings` (sérialisé), `pads_js_analytics`. |
+| Table | PK | Contenu |
+| --- | --- | --- |
+| `melis_cms_page_analytics` | `ph_id` | Journal des visites (hits dédupliqués) : `ph_page_id`, `ph_session_id`, `ph_date_visit`, `ph_site_id`. Aucune adresse IP n'est stockée. |
+| `melis_cms_page_analytics_data` | `pad_id` | Sélection du fournisseur par site : `pad_site_id`, `pad_analytics_key`. |
+| `melis_cms_page_analytics_data_settings` | `pads_id` | Paramètres par (site, fournisseur) : `pads_site_id`, `pads_analytics_key`, `pads_js_analytics`, `pads_settings` (ex. `google_analytics_view_id`). |
 
 ## Exemple
 
-Lire le nombre de vues d'une page, ou la configuration d'analytics active, depuis un service ou un
-contrôleur :
-
 ```php
-// Fournisseur/config d'analytics actif pour un site (null si rien n'est configuré)
-$analytics = $sm->get('MelisCmsPageAnalyticsService')->getAnalytics($siteId);
+// Lire la configuration du fournisseur d'analytics actif pour un site
+$analytics = $serviceManager->get('MelisCmsPageAnalyticsService')->getAnalytics($siteId);
 
-// Vues enregistrées pour une page (utilisé par l'onglet Page Analytics)
-$views = $sm->get('MelisCmsPageAnalyticsTable')->getDataByPageId($pageId);
+// Lire les visites enregistrées pour une page spécifique (utilisé par l'onglet Page Analytics)
+$visits = $serviceManager->get('MelisCmsPageAnalyticsTable')->getDataByPageId($pageId);
 ```
 
-L'enregistrement d'une vue se fait automatiquement au rendu front via le listener ; vous n'appelez
-normalement jamais `saveAnalyticsData()` vous-même.
+L'enregistrement des visites se fait automatiquement au rendu front via le listener ; il n'est
+normalement pas nécessaire d'appeler `saveAnalyticsData()` directement.
 
 ## Fichiers clés
 
-| Sujet | Chemin |
+| Élément | Chemin |
 | --- | --- |
-| Module / bootstrap | `vendor/melisplatform/melis-cms-page-analytics/src/Module.php` |
-| Routes, services, contrôleurs | `vendor/melisplatform/melis-cms-page-analytics/config/module.config.php` |
-| Interface outil/onglet backoffice | `vendor/melisplatform/melis-cms-page-analytics/config/app.interface.php` |
+| Bootstrap du module / enregistrement du listener | `vendor/melisplatform/melis-cms-page-analytics/src/Module.php` |
+| Routes, services, alias de tables, contrôleurs | `vendor/melisplatform/melis-cms-page-analytics/config/module.config.php` |
+| Interface outil back-office + onglet de page | `vendor/melisplatform/melis-cms-page-analytics/config/app.interface.php` |
 | Configuration des outils DataTable | `vendor/melisplatform/melis-cms-page-analytics/config/app.tools.php` |
-| Service de config courante | `vendor/melisplatform/melis-cms-page-analytics/src/Service/MelisCmsPageAnalyticsService.php` |
-| Service d'enregistrement des vues | `vendor/melisplatform/melis-cms-page-analytics/src/Service/MelisCmsDefaultPageAnalyticsService.php` |
+| Configuration des formulaires de paramètres | `vendor/melisplatform/melis-cms-page-analytics/config/app.forms.php` |
+| Contrat fournisseur | `vendor/melisplatform/melis-cms-page-analytics/src/Service/MelisCmsPageAnalyticsServiceInterface.php` |
+| Service d'analytics principal | `vendor/melisplatform/melis-cms-page-analytics/src/Service/MelisCmsPageAnalyticsService.php` |
+| Enregistreur intégré | `vendor/melisplatform/melis-cms-page-analytics/src/Service/MelisCmsDefaultPageAnalyticsService.php` |
 | Listener front (traçage + injection) | `vendor/melisplatform/melis-cms-page-analytics/src/Listener/MelisCmsPageAnalyticsListener.php` |
-| Contrôleur d'outil | `vendor/melisplatform/melis-cms-page-analytics/src/Controller/MelisCmsPageAnalyticsToolController.php` |
-| Contrôleur détails de page | `vendor/melisplatform/melis-cms-page-analytics/src/Controller/MelisCmsPageAnalyticsPageDetailsToolController.php` |
-| Tables | `vendor/melisplatform/melis-cms-page-analytics/src/Model/Tables/` |
-| Install / dbdeploy | `vendor/melisplatform/melis-cms-page-analytics/install/dbdeploy/` |
+| Contrôleur de l'outil global | `vendor/melisplatform/melis-cms-page-analytics/src/Controller/MelisCmsPageAnalyticsToolController.php` |
+| Contrôleur de l'onglet par page | `vendor/melisplatform/melis-cms-page-analytics/src/Controller/MelisCmsPageAnalyticsPageDetailsToolController.php` |
+| Tables gateway | `vendor/melisplatform/melis-cms-page-analytics/src/Model/Tables/` |
+| SQL d'installation | `vendor/melisplatform/melis-cms-page-analytics/install/sql/` |
+
+Voir aussi : [melis-cms](/fr/reference/modules/melis-cms), [melis-core](/fr/reference/modules/melis-core)

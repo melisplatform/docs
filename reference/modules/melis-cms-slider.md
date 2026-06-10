@@ -1,19 +1,18 @@
 # MelisCmsSlider
 
-> Backoffice slider manager plus a front-office templating plugin that renders a slider on a page.
-> Composer package `melisplatform/melis-cms-slider`.
+> Backoffice slider / carousel manager with a front-office templating plugin to display sliders on pages.
+> Package `melisplatform/melis-cms-slider`.
 
 ## Purpose
 
-MelisCmsSlider lets editors create **sliders** (named collections of ordered slides) in the
-backoffice, then drop them onto front-office pages with the `MelisCmsSliderShowSliderPlugin`
-templating plugin. Each slide carries a title, three sub-lines, a link, an image and an
-active/inactive status; only active slides are returned to the front render. It is the canonical
-small content module to read alongside [Plugins](/guide/plugins).
+MelisCmsSlider provides a back-office tool to build **sliders** (named carousels of ordered slides —
+image, title, subtitles, link) and a `MelisCmsSliderShowSliderPlugin` content block that renders a
+chosen slider on any front-office page. It also ships a reusable **slider picker** form element that
+other modules (News, Blog) embed to attach a slider to a content item.
 
 ## Enable it
 
-It's a standard Laminas module. Add it to `config/melis.module.load.php`:
+Add to `config/melis.module.load.php`:
 
 ```php
 return [
@@ -22,123 +21,130 @@ return [
 ];
 ```
 
-Composer dependencies (`composer.json`): `melis-core`, `melis-engine`, `melis-front`, `melis-cms`.
-The module ships `dbdeploy: true`, so its tables are created/updated through
-[melis-dbdeploy](/reference/modules). Sliders are managed from the CMS area — see
-[Build a site](/guide/build-a-site).
+Requires: `melis-core`, `melis-engine`, `melis-front`, `melis-cms` (`^5.2`). The module ships
+`dbdeploy: true` so its tables are created/updated by melis-dbdeploy.
 
 ## Key services
 
-Registered as `service_manager` aliases in `config/module.config.php`.
-
 | Alias | Role |
 | --- | --- |
-| `MelisCmsSliderService` | The slider business logic. Wraps the two table gateways and fires `meliscmsslider_*` events. |
+| `MelisCmsSliderService` | Business logic for sliders and slides; fires `meliscmsslider_*` events. |
 | `MelisCmsSliderTable` | Table gateway for `melis_cms_slider`. |
-| `MelisCmsSliderDetailTable` | Table gateway for `melis_cms_slider_details` (slides). |
+| `MelisCmsSliderDetailTable` | Table gateway for `melis_cms_slider_details`. |
 
-`MelisCmsSliderService` (extends `MelisCore\Service\MelisGeneralService`) exposes:
+`MelisCmsSliderService` extends `MelisGeneralService` and exposes:
 
 | Method | Role |
 | --- | --- |
-| `getSliderList($start, $limit, $order, $search)` | Paginated/searchable list of sliders (each returned as a full slider entity). |
-| `getSlider($sliderId, $status = null)` | One slider with its ordered slides; pass `$status = 1` to keep only active slides. |
-| `getSliderByPageId($pageId, $status = null)` | Slider attached to a page id, with its slides. |
+| `getSlider($sliderId, $status)` | One slider with its slides; pass `1` to return active slides only. |
+| `getSliderByPageId($pageId, $status)` | Slider linked to a page id, with its slides. |
+| `getSliderList($start, $limit, $order, $search)` | Paginated/searchable list of sliders. |
 | `getSliderDetails($sliderDetailId)` | A single slide row. |
-| `saveSlider($slider, $sliderId = null)` | Insert/update a slider; returns the slider id. |
-| `saveSliderDetails($sliderDetail, $sliderDetailId = null)` | Insert/update a slide. |
-| `updateSliderDetailsOrdering($sliderDetailId, $mcsdetail_order)` | Reorder a slide. |
-| `deleteSlider($sliderId)` | Delete a slider and all of its slides. |
+| `saveSlider($data, $sliderId)` | Create or update a slider; returns the slider id. |
+| `saveSliderDetails($slideData, $detailId)` | Create or update a slide. |
+| `updateSliderDetailsOrdering($detailId, $newOrder)` | Reorder a slide. |
+| `deleteSlider($sliderId)` | Delete a slider and all its slides. |
 | `deleteSliderDetails($sliderDetailId)` | Delete a single slide. |
 
-`getSlider()` / `getSliderByPageId()` return a `MelisCmsSlider\Entity\MelisCmsSlider` whose
-`getSliderDetails()` yields the slides.
+`getSlider()` / `getSliderByPageId()` return a `MelisCmsSlider\Entity\MelisCmsSlider` entity whose
+`getSlider()` gives the container row and `getSliderDetails()` gives the slides.
+
+**Event naming note:** each method fires `meliscmsslider_service_*_start` / `_end` events, but
+several write methods reuse another method's event names in the current source. Specifically,
+`saveSlider` fires the `get_slider_details` events, and `deleteSliderDetails` /
+`updateSliderDetailsOrdering` reuse `deleteSlider`'s `delete_details` events — so a listener on
+`meliscmsslider_service_delete_details_end` also fires on reorders.
+
+**Micro-services** (`config/app.microservice.php`) expose `getSliderList`, `getSlider`,
+`getSliderDetails`, `getSliderByPageId`.
 
 ## Backoffice
 
-The module adds the **Slider manager** tool under the CMS tools tree (`config/app.interface.php` /
-`config/app.tools.php`):
+The **Slider manager** is available in the back-office left menu under **CMS** tools. It works as a
+three-level drill-down:
 
-- Tools-tree entry `melis_cms_slider_tool` → section melisKey `meliscms_slider_tools_section`.
-- A **list** view (`MelisCmsSlider_list`, melisKey `MelisCmsSlider_left_menu`) backed by the
-  `MelisCmsSlider_list` table config and `MelisCmsSlider\Controller\MelisCmsSliderListController`.
-- A **details** view (slides editor) under
-  `MelisCmsSlider\Controller\MelisCmsSliderDetailsController`, with the `MelisCmsSlider_details`
-  table config, a properties tab, and add/edit/delete/info slide modals.
-- `MelisSetupController` handles first-time setup (`melis-setup/setup-form`).
+| Level | Controller | Role |
+| --- | --- | --- |
+| Slider list | `MelisCmsSliderListController` | Lists all sliders platform-wide; create / rename modal. |
+| Slider slides | `MelisCmsSliderDetailsController` | Lists a slider's slides; add / edit / delete / reorder; image upload to `/media/sliders/`. |
+| Setup | `MelisSetupController` | First-time module setup. |
 
-Backoffice routing is the standard `/melis/MelisCmsSlider/<Controller>/<action>` segment.
-`onBootstrap` (in `src/Module.php`) attaches four backoffice listeners:
-`MelisCmsSliderFlashMessengerListener`, `MelisCmsSliderServiceMicroServiceListener`,
-`MelisCmsSliderTableColumnDisplayListener`, `MelisCmsSliderToolCreatorEditionTypeListener`.
-
-To build your own tool like this one, see [Create a tool](/guide/create-a-tool).
+Tool and DataTable configuration lives in `config/app.tools.php` (two tables);
+the slide form (fields `mcsdetail_title`, `mcsdetail_sub1`–`sub3`, `mcsdetail_link`,
+`mcsdetail_img`, `mcsdetail_order`) is in `config/app.forms.php`.
 
 ## Front office
 
-A **templating plugin** renders the slider on a page (see [Plugins](/guide/plugins)).
-
-| Plugin | Role |
+| Item | Role |
 | --- | --- |
-| `MelisCmsSliderShowSliderPlugin` (`src/Controller/Plugin/`) | Fetches the configured slider via `MelisCmsSliderService::getSlider($sliderId, 1)` and passes `pluginId` + `showSlider` (the active slides) to the front template. |
+| `MelisCmsSliderShowSliderPlugin` (controller plugin) | Fetches the configured slider via `MelisCmsSliderService` and renders it through the chosen template. Config: `config/plugins/MelisCmsSliderShowSliderPlugin.config.php` — one **Properties** tab with `template_path` and `sliderId`. Default template: `view/melis-cms-slider/plugins/showslider.phtml`. |
+| `MelisCmsSliderPlugin` (view helper) | `MelisCmsSliderHelper` — renders the plugin from a phtml template. |
+| `CmsSliderSelect` (form element) | Select populated with available sliders; factory `src/Form/Factory/CmsSliderSelectFactory.php`. Used in the plugin option form and embedded by News / Blog. |
 
-Config: `config/plugins/MelisCmsSliderShowSliderPlugin.config.php` — `configPluginKey` is
-`meliscmsslider`, `pluginXmlDbKey` is `melisCmsSlider`. The backoffice form (one
-**Properties** tab) lets the editor pick a `template_path` (`MelisEnginePluginTemplateSelect`) and a
-`sliderId` (the `CmsSliderSelect` form element, factory `src/Form/Factory/CmsSliderSelectFactory.php`).
-Default front template: `MelisCmsSlider/showslider`
-(`view/melis-cms-slider/plugins/showslider.phtml`).
+**Reusable picker interfaces:** `meliscmsslider_select_slider` (`renderSelectSliderAction`) for
+News, `meliscmsslider_select_slider_blog` for Blog.
 
-Also registered:
-
-| Item | Name | Role |
-| --- | --- | --- |
-| View helper | `MelisCmsSliderPlugin` (`src/View/Helper/MelisCmsSliderHelper.php`) | Renders the slider plugin from a template: `$this->MelisCmsSliderPlugin($params)`. |
-| Form element | `CmsSliderSelect` | A select populated with the available sliders, used in the plugin's option form. |
+**Consumers:** MelisCmsNews persists the chosen slider in `cnews_slider_id` and ships a listener
+that detaches a deleted slider from any news using it; Blog uses `cblog_slider_id`.
 
 ## Database tables
 
-Created by `install/dbdeploy/` (managed by melis-dbdeploy):
-
-| Table | Role |
+| Table | Holds |
 | --- | --- |
 | `melis_cms_slider` | A slider: `mcslide_id`, `mcslide_name`, `mcslide_page_id`, `mcslide_date`. |
-| `melis_cms_slider_details` | Slides: `mcsdetail_id`, `mcsdetail_mcslider_id`, `mcsdetail_status`, `mcsdetail_title`, `mcsdetail_sub1`–`sub3`, `mcsdetail_link`, `mcsdetail_img`, `mcsdetail_order`. |
+| `melis_cms_slider_details` | A slide: `mcsdetail_id`, FK `mcsdetail_mcslider_id`, `mcsdetail_status`, `mcsdetail_title`, `mcsdetail_sub1`–`sub3`, `mcsdetail_link`, `mcsdetail_img`, `mcsdetail_order`. |
 
 ## Example
 
-Render a slider from a front-office controller using the templating plugin:
-
 ```php
-// In a controller action
-$plugin = $this->MelisCmsSliderShowSliderPlugin();
-$pluginView = $plugin->render(['sliderId' => 1]);
-$view->addChild($pluginView, 'showSlider');
-// In the .phtml: echo $this->showSlider;
+$slider = $this->getServiceManager()->get('MelisCmsSliderService');
+
+// Fetch one slider with active slides only
+$one    = $slider->getSlider($sliderId, 1);
+
+// Fetch the slider tied to a page
+$byPage = $slider->getSliderByPageId($pageId, 1);
+
+// Paginated list
+$list   = $slider->getSliderList(0, 10, 'mcslide_id', null);
+
+// Create / update
+$id     = $slider->saveSlider($data, $sliderId);
+$did    = $slider->saveSliderDetails($slideData, $detailId);
+
+// Reorder
+$slider->updateSliderDetailsOrdering($detailId, $newOrder);
+
+// Delete slider + all its slides
+$slider->deleteSlider($sliderId);
 ```
 
-Or read a slider's active slides directly through the service:
+Listening to a service event:
 
 ```php
-$sliderSrv = $serviceManager->get('MelisCmsSliderService');
-$slider = $sliderSrv->getSlider($sliderId, 1); // status 1 = active only
-$slides = $slider ? $slider->getSliderDetails() : [];
+$sharedEvents->attach(
+    'MelisCmsSlider',
+    'meliscmsslider_service_delete_details_end',
+    $fn,
+    50
+);
 ```
 
 ## Key files
 
 | Concern | Path |
 | --- | --- |
-| Module / config loading | `vendor/melisplatform/melis-cms-slider/src/Module.php` |
-| Wiring (services, routes, plugins, helpers) | `vendor/melisplatform/melis-cms-slider/config/module.config.php` |
-| Backoffice tools tree | `vendor/melisplatform/melis-cms-slider/config/app.interface.php` |
-| Backoffice table config | `vendor/melisplatform/melis-cms-slider/config/app.tools.php` |
+| Module wiring | `vendor/melisplatform/melis-cms-slider/config/module.config.php` |
+| Backoffice interface / tools | `vendor/melisplatform/melis-cms-slider/config/app.interface.php` · `app.tools.php` |
+| Slide form | `vendor/melisplatform/melis-cms-slider/config/app.forms.php` |
+| Micro-service config | `vendor/melisplatform/melis-cms-slider/config/app.microservice.php` |
 | Templating plugin config | `vendor/melisplatform/melis-cms-slider/config/plugins/MelisCmsSliderShowSliderPlugin.config.php` |
 | Service | `vendor/melisplatform/melis-cms-slider/src/Service/MelisCmsSliderService.php` |
-| Templating plugin | `vendor/melisplatform/melis-cms-slider/src/Controller/Plugin/MelisCmsSliderShowSliderPlugin.php` |
+| Entity | `vendor/melisplatform/melis-cms-slider/src/Entity/MelisCmsSlider.php` |
+| Table gateways | `vendor/melisplatform/melis-cms-slider/src/Model/Tables/` |
+| Slider picker factory | `vendor/melisplatform/melis-cms-slider/src/Form/Factory/CmsSliderSelectFactory.php` |
 | View helper | `vendor/melisplatform/melis-cms-slider/src/View/Helper/MelisCmsSliderHelper.php` |
-| Tables | `vendor/melisplatform/melis-cms-slider/src/Model/Tables/MelisCmsSliderTable.php`, `MelisCmsSliderDetailTable.php` |
-| Install SQL | `vendor/melisplatform/melis-cms-slider/install/dbdeploy/83118_cms_slider_install.sql` |
+| Default front template | `vendor/melisplatform/melis-cms-slider/view/melis-cms-slider/plugins/showslider.phtml` |
 
 See also: [Module reference](/reference/modules) · [Plugins](/guide/plugins) ·
-[Build a site](/guide/build-a-site).
+[Build a site](/guide/build-a-site)

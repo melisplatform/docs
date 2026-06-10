@@ -1,147 +1,126 @@
 # MelisCmsPageScriptEditor
 
-> Injecte des scripts/balises personnalisés dans le `<head>` et la fin du `<body>` des pages du
-> front-office, par page et par site. Paquet Composer `melisplatform/melis-cms-page-script-editor`.
+> Injecte des scripts et styles personnalisés dans le `<head>` et le `<body>` des pages du
+> front-office, par page et par site, sans modifier les templates. Paquet `melisplatform/melis-cms-page-script-editor`.
 
-## Objectif
+## Présentation
 
-MelisCmsPageScriptEditor permet aux contributeurs de coller du balisage brut (tags analytics,
-balises meta, JS/CSS tiers…) qui est injecté dans une page lors de son rendu sur le front-office.
-Les scripts sont stockés à deux niveaux — **par site** et **par page** — et fusionnés au moment du
-rendu. Une page peut aussi être marquée comme **exception** afin d'ignorer les scripts du site et
-n'utiliser que les siens. L'injection est entièrement automatique : un listener MVC réécrit le HTML
-de la réponse sur la route front, sans aucune modification de templating.
+MelisCmsPageScriptEditor vous permet d'ajouter du balisage brut — tags analytics, pixels de
+tracking, widgets tiers, blocs `<script>`/`<style>` personnalisés — à vos pages et sites, et de les
+faire injecter automatiquement dans le HTML rendu. Trois emplacements d'injection sont disponibles :
+**head top** (juste après `<head>`), **head bottom** (juste avant `</head>`), et **body bottom**
+(juste avant `</body>`). Les scripts peuvent être limités à l'ensemble du site ou à une seule page ;
+une page peut également être marquée comme exception pour exclure les scripts du site.
 
 ## Activation
 
-C'est un module Laminas standard. Ajoutez-le à `config/melis.module.load.php` (déjà présent dans ce
-skeleton) :
+Ajoutez à `config/melis.module.load.php` :
 
 ```php
 return [
-    // …
     'MelisCmsPageScriptEditor',
 ];
 ```
 
-Dépendances Composer (`composer.json`) : `melis-core`, `melis-cms`. Le module embarque
-`dbdeploy: true`, ses tables sont donc créées/mises à jour via
-[melis-dbdeploy](/fr/reference/modules). Les scripts s'éditent depuis l'éditeur de page CMS et
-l'outil Sites — voir [Construire un site](/fr/guide/build-a-site).
+Nécessite `melis-core` et `melis-cms` (`^5.2`). Le module est marqué `dbdeploy: true`, ses tables
+sont donc créées automatiquement par melis-dbdeploy.
+
+> **Activation par site :** l'injection n'est effective sur un site qu'une fois le module chargé
+> pour ce site dans MelisCms → Sites → Chargement des modules. Les scripts peuvent être édités dans
+> le back-office avant cela, mais rien n'est injecté en front tant que le module n'est pas activé
+> sur le site.
 
 ## Services principaux
 
-Déclarés comme alias `service_manager` dans `config/module.config.php`.
-
 | Alias | Rôle |
 | --- | --- |
-| `MelisCmsPageScriptEditorService` | La logique métier des scripts (enregistrement, lecture, fusion, injection). Émet des événements `meliscmspagescripteditor_*`. |
-| `MelisCmsScriptTable` | Passerelle de table pour `melis_cms_scripts` (scripts site & page). |
-| `MelisCmsScriptExceptionTable` | Passerelle de table pour `melis_cms_scripts_exceptions` (pages excluant les scripts du site). |
+| `MelisCmsPageScriptEditorService` | Toute la logique métier des scripts : enregistrement, lecture, fusion et injection. |
+| `MelisCmsScriptTable` | Passerelle de table pour `melis_cms_scripts`. |
+| `MelisCmsScriptExceptionTable` | Passerelle de table pour `melis_cms_scripts_exceptions`. |
 
-`MelisCmsPageScriptEditorService` (étend `MelisCore\Service\MelisGeneralService`) expose :
+`MelisCmsPageScriptEditorService` expose les méthodes suivantes :
 
 | Méthode | Rôle |
 | --- | --- |
-| `addScript($siteId, $pageId, $headTopScript, $headBottomScript, $bodyBottomScript, $mcs_id)` | Insère/met à jour une ligne de scripts (n'enregistre que si au moins un des trois champs est non vide). |
-| `addScriptException($siteId, $pageId)` | Marque une page comme excluant les scripts du site (sans effet si déjà présente). |
-| `getScriptsPerSite($siteId)` | Ligne(s) de scripts pour un identifiant de site. |
-| `getScriptsPerPage($pageId)` | Ligne(s) de scripts pour un identifiant de page. |
-| `getScriptsExceptionPerPage($pageId)` | Ligne(s) d'exception pour un identifiant de page. |
-| `getScriptExceptions($siteId, $sortColumn, $sortOrder)` | Liste des pages qui excluent les scripts du site (utilisée par le tableau de l'outil Sites). |
-| `getMixedScriptsPerPage($pageId)` | Résout les scripts finaux `headTopScript` / `headBottomScript` / `bodyBottomScript` d'une page — site + page fusionnés, ou page seule lorsque la page est une exception. |
-| `updatePageScripts($idPage, $contentGenerated)` | Prend le HTML rendu et injecte les scripts fusionnés après `<head>`, avant `</head>` et avant `</body>`. |
-| `getSiteId($pageId)` | Résout l'identifiant de site d'une page (vérifie la page publiée puis la page sauvegardée). |
-
-`MelisCmsScriptExceptionTable::getScriptExceptions($siteId, $orderColumn, $order)` renvoie la liste
-des exceptions jointe aux noms de pages pour la grille de l'outil Sites.
+| `addScript($siteId, $pageId, $headTop, $headBottom, $bodyBottom, $mcsId)` | Insère ou met à jour une ligne de scripts pour un site ou une page. |
+| `addScriptException($siteId, $pageId)` | Marque une page comme excluant les scripts du site. |
+| `getScriptExceptions($siteId, $sortCol, $sortOrder)` | Liste les pages qui excluent les scripts du site (utilisée par le tableau de l'outil Sites). |
+| `getScriptsPerSite($siteId)` | Récupère la ou les lignes de scripts pour un site. |
+| `getScriptsPerPage($pageId)` | Récupère la ou les lignes de scripts pour une page. |
+| `getScriptsExceptionPerPage($pageId)` | Récupère la ou les lignes d'exception pour une page. |
+| `getMixedScriptsPerPage($pageId)` | Résout les scripts finaux d'une page — site + page fusionnés, ou page seule lorsque la page est une exception. Utilisé par le listener de rendu front. |
+| `updatePageScripts($pageId, $html)` | Injecte les scripts fusionnés dans le HTML rendu (après `<head>`, avant `</head>`, avant `</body>`). |
+| `getSiteId($pageId)` | Résout l'identifiant de site pour une page donnée. |
 
 ## Back-office
 
-Deux surfaces d'édition sont déclarées dans `config/app.toolstree.php` / `config/app.tools.php`,
-greffées dans l'interface CMS existante :
+Deux onglets **Scripts** sont injectés dans l'interface CMS existante via `config/app.toolstree.php` :
 
-- **Onglet de l'éditeur de page** — un onglet **Scripts** dans l'édition de page (melisKey
-  `meliscms_page_script_editor`, contrôleur
-  `MelisCmsPageScriptEditor\Controller\MelisCmsPageScriptEditorPageEdition`, action
-  `render-page-script-editor`). Il héberge le formulaire `meliscmspagescripteditor_script_form`
-  (`mcs_head_top`, `mcs_head_bottom`, `mcs_body_bottom`) plus la case
-  `meliscmspagescripteditor_script_exception_form` (`mcse_exclude_site_scripts`) pour exclure les
-  scripts du site sur cette page.
-- **Onglet de l'outil Sites** — un onglet **Scripts** dans l'*Édition du site* de l'outil Sites
-  (melisKey `meliscms_tool_sites_scripts`, contrôleur `MelisCmsPageScriptEditorToolSiteEdition`,
-  action `render-tool-site-scripts`). Il édite les scripts au niveau du site (mêmes trois champs)
-  et liste les pages exclues via le tableau `meliscmspagescripteditor_site_script_exceptions`
-  (ajax `…/MelisCmsPageScriptEditorToolSiteEdition/getScriptExceptions`), avec une action de
-  suppression d'exception.
+| Surface | melisKey | Contrôleur | Contenu |
+| --- | --- | --- | --- |
+| Éditeur de page → onglet Scripts | `meliscmspagescripteditor_page_edition` | `MelisCmsPageScriptEditorPageEditionController` | Trois zones de texte (`mcs_head_top`, `mcs_head_bottom`, `mcs_body_bottom`) plus une case à cocher *exclure les scripts du site* (`mcse_exclude_site_scripts`). |
+| Outil Sites → onglet Scripts | `meliscms_tool_sites_scripts` | `MelisCmsPageScriptEditorToolSiteEditionController` | Les mêmes trois emplacements pour les scripts du site, plus un DataTable d'exceptions (`meliscmspagescripteditor_site_script_exceptions`) listant chaque page exclue, avec une action de suppression d'exception et un formulaire d'ajout. |
 
-Le routage back-office est le segment standard
-`/melis/MelisCmsPageScriptEditor/<Controller>/<action>`. L'enregistrement est piloté par événements
-plutôt que par un post direct du formulaire : `onBootstrap` (dans `src/Module.php`) attache des
-listeners qui déclenchent les actions de sauvegarde lors de la sauvegarde/publication de la page ou
-du site.
+L'enregistrement est piloté par événements. `Module.php::onBootstrap` enregistre ces listeners :
 
-| Listener | Événements (`MelisCms`) | Rôle |
+| Listener | Déclencheur | Rôle |
 | --- | --- | --- |
-| `MelisCmsPageScriptEditorSavePageListener` | `meliscms_page_save_start`, `meliscms_page_publish_start` | Déclenche `MelisCmsPageScriptEditorPageEdition::saveScript` pour persister l'onglet Scripts de la page. |
-| `MelisCmsPageScriptEditorSaveSiteScriptListener` | `meliscms_site_save_end` | Déclenche `MelisCmsPageScriptEditorToolSiteEdition::saveSiteScript` pour persister l'onglet Scripts du site. |
-| `MelisCmsPageScriptEditorDuplicatePageListener` | `meliscms_page_duplicate_*`, `melis_cms_duplicate_page_*` | Copie les scripts et l'indicateur d'exception de la page source vers la page dupliquée. |
+| `MelisCmsPageScriptEditorSavePageListener` | Sauvegarde / publication de page (BO) | Persiste les scripts de la page et son exception d'exclusion du site. |
+| `MelisCmsPageScriptEditorSaveSiteScriptListener` | Sauvegarde du site (BO) | Persiste les scripts du site. |
+| `MelisCmsPageScriptEditorDuplicatePageListener` | Duplication de page (BO) | Copie les scripts et l'indicateur d'exception vers la nouvelle page. |
 
-Pour créer votre propre outil, voir [Créer un outil](/fr/guide/create-a-tool).
+## Front office
 
-## Front-office
+L'injection se fait via un listener MVC, et non via un plugin de template :
 
-L'injection n'est **pas** un plugin de templating — elle se fait via un listener MVC :
-
-| Listener | Événement | Rôle |
+| Listener | Déclencheur | Rôle |
 | --- | --- | --- |
-| `MelisCmsPageScriptEditorScriptTagListener` | `MvcEvent::EVENT_FINISH` (route front uniquement, priorité 70) | Lors d'un rendu front, appelle `MelisCmsPageScriptEditorService::updatePageScripts($idpage, $content)` et remplace le corps de la réponse par le HTML enrichi des scripts. Ignore les URI non-PHP/assets. |
+| `MelisCmsPageScriptEditorScriptTagListener` | Rendu de page (front) | Appelle `getMixedScriptsPerPage()` et injecte les scripts résolus : head-top après `<head>`, head-bottom avant `</head>`, body-bottom avant `</body>`. |
 
-Un view helper est aussi enregistré pour l'enregistrement programmatique :
-
-| Élément | Nom | Rôle |
-| --- | --- | --- |
-| View helper | `melisCmsPageScriptEditorAddScript` (`src/View/Helper/MelisCmsPageScriptEditorAddScriptHelper.php`) | `addScriptData($serviceManager, $scriptData, $siteId, $pageId)` enregistre une ligne de scripts via le service, ou la supprime lorsque tous les champs sont vidés. |
+Le view helper `melisCmsPageScriptEditorAddScript`
+(`src/View/Helper/MelisCmsPageScriptEditorAddScriptHelper.php`) offre un accès programmatique pour
+enregistrer une ligne de scripts via le service.
 
 ## Tables de base de données
 
-Créées par `install/dbdeploy/` (gérées par melis-dbdeploy) :
-
-| Table | Rôle |
+| Table | Contenu |
 | --- | --- |
-| `melis_cms_scripts` | Un jeu de scripts par site **ou** par page : `mcs_id`, `mcs_site_id`, `mcs_page_id`, `mcs_head_top`, `mcs_head_bottom`, `mcs_body_bottom`, `mcs_date_edition`, `mcs_user_id`. |
+| `melis_cms_scripts` | Un jeu de scripts par site ou par page : `mcs_id`, `mcs_site_id`, `mcs_page_id`, `mcs_head_top`, `mcs_head_bottom`, `mcs_body_bottom`, `mcs_date_edition`, `mcs_user_id`. |
 | `melis_cms_scripts_exceptions` | Pages qui ignorent les scripts du site : `mcse_id`, `mcse_site_id`, `mcse_page_id`, `mcse_date_creation`, `mcse_user_id`. |
 
 ## Exemple
 
-Résoudre et lire les scripts finaux qui seraient injectés dans une page, puis observer ce que fait
-le listener front au moment du rendu :
-
 ```php
-$scriptSrv = $serviceManager->get('MelisCmsPageScriptEditorService');
+$scripts = $this->getServiceManager()->get('MelisCmsPageScriptEditorService');
 
-// Scripts site + page fusionnés (page seule lorsque la page est une exception)
-$scripts = $scriptSrv->getMixedScriptsPerPage($pageId);
-// $scripts['headTopScript'], $scripts['headBottomScript'], $scripts['bodyBottomScript']
+// Résoudre les scripts finaux d'une page (site + page fusionnés, ou page seule si exception)
+$resolved = $scripts->getMixedScriptsPerPage($pageId);
+// $resolved contains headTopScript, headBottomScript, bodyBottomScript
 
-// Même fusion appliquée au HTML rendu (ce qu'appelle le listener front EVENT_FINISH)
-$html = $scriptSrv->updatePageScripts($pageId, $renderedHtml);
+// Enregistrer les scripts pour un site ou une page
+$scripts->addScript($siteId, $pageId, $headTop, $headBottom, $bodyBottom, $mcsId);
+
+// Marquer une page comme exception (elle ne recevra plus les scripts du site)
+$scripts->addScriptException($siteId, $pageId);
+
+// Lister toutes les pages exclues des scripts du site
+$exceptions = $scripts->getScriptExceptions($siteId, $sortCol, $sortOrder);
 ```
 
 ## Fichiers clés
 
-| Sujet | Chemin |
+| Élément | Chemin |
 | --- | --- |
-| Module / chargement de la config | `vendor/melisplatform/melis-cms-page-script-editor/src/Module.php` |
-| Câblage (services, routes, helpers) | `vendor/melisplatform/melis-cms-page-script-editor/config/module.config.php` |
+| Bootstrap du module & câblage des listeners | `vendor/melisplatform/melis-cms-page-script-editor/src/Module.php` |
+| Câblage des services (services, routes, helpers) | `vendor/melisplatform/melis-cms-page-script-editor/config/module.config.php` |
 | Onglets back-office (arbre d'interface) | `vendor/melisplatform/melis-cms-page-script-editor/config/app.toolstree.php` |
-| Formulaires & config de tableau back-office | `vendor/melisplatform/melis-cms-page-script-editor/config/app.tools.php` |
+| Formulaires & tableau des exceptions back-office | `vendor/melisplatform/melis-cms-page-script-editor/config/app.tools.php` |
 | Service | `vendor/melisplatform/melis-cms-page-script-editor/src/Service/MelisCmsPageScriptEditorService.php` |
 | Listener d'injection front | `vendor/melisplatform/melis-cms-page-script-editor/src/Listener/MelisCmsPageScriptEditorScriptTagListener.php` |
 | Listeners de sauvegarde / duplication | `vendor/melisplatform/melis-cms-page-script-editor/src/Listener/` |
 | View helper | `vendor/melisplatform/melis-cms-page-script-editor/src/View/Helper/MelisCmsPageScriptEditorAddScriptHelper.php` |
-| Tables | `vendor/melisplatform/melis-cms-page-script-editor/src/Model/Tables/MelisCmsScriptTable.php`, `MelisCmsScriptExceptionTable.php` |
-| SQL d'installation | `vendor/melisplatform/melis-cms-page-script-editor/install/dbdeploy/22020801_melis_cms_page_script_editor_install.sql` |
+| Passerelles de table | `vendor/melisplatform/melis-cms-page-script-editor/src/Model/Tables/` |
+| SQL d'installation | `vendor/melisplatform/melis-cms-page-script-editor/install/dbdeploy/` |
 
-Voir aussi : [Référence des modules](/fr/reference/modules) ·
-[Construire un site](/fr/guide/build-a-site) · [Plugins](/fr/guide/plugins).
+Voir aussi : [Référence des modules](/fr/reference/modules) · [melis-cms](/fr/reference/modules/melis-cms) ·
+[melis-core](/fr/reference/modules/melis-core)

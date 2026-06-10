@@ -34,8 +34,8 @@ attaches `MelisSBAddModuleConfigListener` and, on backoffice routes, a set of CM
 
 | Service alias | Role |
 | --- | --- |
-| `MelisEnginePage` | The module **overrides** the engine's page service with `MelisSBPageService` (extends `MelisPageService`). Its `getDatasPage($idPage, $type = 'published')` lets the editor read page data from the versioning store as well as the live page. |
-| `MelisSBPageCommentService` | Page comments: `getPageComments($idPage, $newsId, $blogId)`, `setPageComments(array $data, $commentType = 1)`, `getPageCommentForm()`. |
+| `MelisEnginePage` | The module **overrides** the engine's page service with `MelisSBPageService`. When the route is the version-preview route (`…/id/{idpage}/preview/idversion/{idversion}`), it returns the versioned page tree from `melis_sb_page_versioning`; otherwise it behaves exactly like the parent. |
+| `MelisSBPageCommentService` | Page comments: `getPageComments()` (enriches with user + formatted date), `setPageComments()` (saves with the current user as author). |
 
 Table gateways are also registered as services: `MelisPageComment`, `MelisPageCommentType`,
 `MelisPageLockTable`, `MelisPageVersioningTable`, `MelisUserRole`, `MelisWorkflowTable`,
@@ -58,6 +58,15 @@ Tools and interfaces are declared in `config/app.tools.php` and `config/app.inte
 | `melissb_page_comments` | `PageComments::render-page-comments` | **Comments** tab on the page editor (add + timeline). |
 | `melissb_medialib` | `MediaLibrary::renderPageMediaLibrary` | **Media library** tool (TinyMCE MoxieManager) for browsing/uploading files. |
 | `melissb_workflow_modal_content` | `MelisWorkflow::render-workflow-modal-content` | **Workflow** modal: ask for validation, validate, refuse, and view the historic. |
+
+The workflow feature sends three backoffice emails (defined in `app.emails.php`) through MelisCore's
+BO email service:
+
+| Email code | Trigger | Tags available |
+| --- | --- | --- |
+| `WF_DEMAND` | A validation request is raised | `USER_TO`, `USER_FROM`, `TYPE`, `DETAILS` |
+| `WF_VALIDATED` | An approver validates a demand | same |
+| `WF_REFUSED` | An approver refuses a demand | same |
 
 The module also adds a `MelisMediaUpload` (`melis-media-upload`) form element with its factory,
 view helper and `MelisMediaUploadValidator`.
@@ -87,6 +96,7 @@ Created by `install/dbdeploy/126618_melis_sb_install.sql` (mirrored in `install/
 | `melis_sb_page_comment` | Comments attached to a page. |
 | `melis_sb_page_comment_type` | Comment types (`PAGE`, `WORKFLOW`). |
 | `melis_sb_page_locked` | Active page locks (which user is editing which page). |
+| `melis_core_user_role` | Named roles (`urole_id`, `urole_name`, `urole_creation_date`, `urole_rights`) — rights stored as XML, like a user's own rights record. |
 
 ## Example
 
@@ -113,6 +123,7 @@ $commentService->setPageComments(
 | Routing, services, controllers | `vendor/melisplatform/melis-small-business/config/module.config.php` |
 | Tools (userrole, versioning) | `vendor/melisplatform/melis-small-business/config/app.tools.php` |
 | Backoffice interface tree | `vendor/melisplatform/melis-small-business/config/app.interface.php` |
+| Workflow email definitions | `vendor/melisplatform/melis-small-business/config/app.emails.php` |
 | Page service (engine override) | `vendor/melisplatform/melis-small-business/src/Service/MelisSBPageService.php` |
 | Comment service | `vendor/melisplatform/melis-small-business/src/Service/MelisSBPageCommentService.php` |
 | Workflow / versioning / lock controllers | `vendor/melisplatform/melis-small-business/src/Controller/` |

@@ -2,92 +2,77 @@
 
 > Fournisseur Anthropic Claude pour le moteur d'IA Melis — paquet `melisplatform/melis-ai-engine-claude`.
 
-## Objectif
+## Présentation
 
-`MelisAIEngineClaude` branche les modèles Claude d'Anthropic dans [Melis AI](/fr/guide/ai). C'est une
-*implémentation de fournisseur* : elle étend `MelisAIEngine\Service\MelisAIEngineModelService` et
-fournit tout ce qui est spécifique à l'API Messages d'Anthropic — configuration du client HTTP, forme
-des requêtes/réponses, gestion des fichiers, appel d'outils (y compris les outils [MCP](/fr/guide/mcp)
-et l'outil intégré `web_fetch`), mise en cache des prompts et comptage des jetons. Le moteur d'IA
-choisit ce fournisseur automatiquement selon la société (`Anthropic`) et l'identifiant du modèle
-actif. Ce n'est ni un outil de back-office ni un plugin de front-office — il n'a pas d'interface
-propre.
+`MelisAIEngineClaude` est le fournisseur Anthropic Claude concret de la suite MelisAI. Il étend le contrat `MelisAIEngineModelService` du moteur et fournit la configuration du client HTTP spécifique à Claude, la structure du payload de l'API Messages Anthropic, la gestion des fichiers, le mappage des outils/fonctions et l'analyse des réponses. Le module est sans état — il ne possède aucune table de base de données ; tout l'état d'exécution réside dans les tables propres au moteur.
+
+Le moteur sélectionne automatiquement ce fournisseur à l'exécution lorsque la société du modèle actif contient `Anthropic` (et que ce module est installé).
 
 ## Activation
 
-C'est un module Laminas standard. Ajoutez-le à `config/melis.module.load.php` **après** le moteur
-d'IA :
+Ajoutez à `config/melis.module.load.php` après le moteur d'IA :
 
 ```php
-'MelisAIEngine',
-'MelisAIEngineClaude',
-'MelisAI',
+return [
+    'MelisAIEngine',
+    'MelisAIEngineClaude',
+];
 ```
 
-Dépendances (d'après `composer.json`) : `melisplatform/melis-ai-engine` `^5.3` et PHP `^8.1|^8.3`.
-Le module fournit des deltas `dbdeploy` (`"dbdeploy": true`) qui enregistrent la société Anthropic et
-ses modèles Claude ; exécutez dbdeploy après l'activation pour qu'ils soient insérés. La clé API Claude
-est stockée par modèle (le `mapk_keys` du modèle), renseignée dans le back-office Melis AI — pas dans
-un fichier de config.
+Dépendance : `melisplatform/melis-ai-engine` `^5.3`. La clé API Anthropic est stockée par modèle dans le back-office Melis AI (la ligne de clé `mapk_*` du modèle) — pas dans un fichier de configuration ni dans une variable d'environnement.
 
-## Services clés
+## Services principaux
 
 | Alias de service | Rôle |
 | --- | --- |
-| `MelisAIEngineModelClaudeService` | Le fournisseur Claude. Étend `MelisAIEngineModelService` et implémente le contrat de l'API Messages d'Anthropic. |
+| `MelisAIEngineModelClaudeService` | Le fournisseur Claude. Étend `MelisAIEngineModelService` et implémente le contrat de l'API Messages Anthropic. Construit par le gestionnaire de services avec les options de fabrique `['modelId' => …, 'agentId' => …]`. |
 
-Il est construit par `MelisAIEngineModelClaudeServiceFactory`, qui prend `modelId` / `agentId` dans les
-`$options` de la fabrique. Méthodes notables :
+Méthodes notables sur `MelisAIEngineModelClaudeService` :
 
 | Méthode | Rôle |
 | --- | --- |
-| `setClient()` | Construit le client HTTP Laminas : POST vers l'`api_url` configurée, `x-api-key` depuis le modèle, `anthropic-version: 2023-06-01`, les betas `prompt-caching` + `web-fetch`, délai de 3600 s. |
-| `sendCustomAI($payload)` | L'appel principal. Définit `model` / `max_tokens`, applique la mise en cache des prompts, ajoute les outils, envoie la requête, puis exécute la boucle d'appel d'outils multi-sauts (exécution des outils MCP et du service de fonctions, renvoi des `tool_result`) avec relances et un garde-fou de continuation/sauts. |
-| `addContentToPayload($payload, $role, $prompt, $files, $content)` / `constructContent()` / `constructTextContent()` | Construisent les messages au format de l'API Messages (blocs `text`, `image`, `document`). |
-| `addToolsToPayload($payload)` / `sanitizeToolForClaudeAPI($tool)` | Attachent les outils de l'agent (en retirant les clés internes comme `mcp`, `server`, `module`) ainsi que l'outil `web_fetch`. |
-| `processFiles($files)` / `processContextFiles($files)` | Normalisent les téléversements pour le mode `embed` (texte en ligne, images/PDF en base64, `.docx`/`.xlsx` extraits en texte, ou URLs de Document Upload). |
-| `getAllowedMimetypes()` | Renvoie les types MIME de téléversement autorisés depuis la config. |
-| `continueConversation($sessionId, ...)` | Reprend une chaîne d'appels d'outils stockée en session entre les sauts HTTP. |
-| `setPromptTokenCount()` / `setResponseTokenCount()` / `setTotalTokenCount()` | Lisent `usage.input_tokens` / `usage.output_tokens` dans la réponse. |
+| `setClient()` | Construit un `Laminas\Http\Client` effectuant un POST vers l'URL Claude Messages configurée. Définit les en-têtes `Content-Type/Accept: application/json`, `x-api-key` (depuis la clé API du modèle), `anthropic-version: 2023-06-01`, et un en-tête `anthropic-beta` activant les betas de mise en cache des prompts et de récupération web. Utilise un long délai d'attente pour accommoder les boucles d'appel d'outils. |
+| `getMessageKey()` | Retourne `'messages'`. |
+| `addToolsToPayload()` | Lit les fonctions de l'agent via `getAgentFunctions()`, retire les clés internes du moteur (`mcp`, `type`, `server`, `module`, `max_silence`, `operation_timeout`) via `sanitizeToolForClaudeAPI()`, ajoute les outils au format Anthropic (`name`, `description`, `input_schema`), ajoute l'outil intégré `web_fetch`, et déduplique par nom. |
+| `constructContent()` / `addContentToPayload()` | Mappe le rôle `model` vers `assistant` ; construit les blocs de contenu Anthropic (`{type:text}`, `{type:image, source:{url|base64,…}}`, `{type:document, source:{…, media_type:application/pdf}}`) ; les ajoute à `payload['messages']`. |
+| `sendCustomAI()` | Injecte `model` (`mam_generative_model`) et `max_tokens` ; envoie le JSON en POST avec des relances sur les erreurs 5xx ; analyse `content[]` en blocs texte et `tool_use` ; dispatche chaque outil (MCP via `MelisAIEngineMcpService::invokeTool`, sinon intégré) ; ajoute les résultats en tant que `{type:tool_result, tool_use_id, content}` dans un message `user` ; boucle jusqu'à ce que `stop_reason === 'end_turn'` ou qu'un garde-fou de sauts soit atteint. Active la mise en cache des prompts. |
+| `processFiles()` / `processContextFiles()` | Convertit les fichiers téléversés selon le `mam_file_upload_mode` du modèle (par défaut : `embed`) : DOCX/XLSX → texte extrait, images/PDF → base64, ou via `uploadDocument()` lorsque le téléversement interne est activé. |
+| `setPromptTokenCount()` / `setResponseTokenCount()` / `setTotalTokenCount()` | Lisent les champs `responseData['usage']` (`input_tokens`, `output_tokens`, ainsi que les compteurs de lecture/création du cache) ; total = entrée + sortie. |
+| `getAllowedMimetypes()` | Retourne les types MIME de téléversement autorisés depuis le bloc de configuration Claude. |
+| `continueConversation()` | Réhydrate l'historique des messages depuis l'état sauvegardé et rappelle `sendCustomAI()` pour la continuation d'appels d'outils multi-sauts. |
+
+## Appel d'outils / fonctions
+
+Les outils du moteur utilisent déjà le format `input_schema` d'Anthropic, donc `addToolsToPayload()` se contente principalement de les assainir et de les transmettre. Un appel d'outil du modèle arrive sous la forme `{type:'tool_use', name, id, input}` ; le service en extrait `name` / `input` / `id`, route via `MelisAIEngineMcpService::isMcpTool()` (MCP `invokeTool` vs. fonction intégrée), et retourne le résultat sous la forme `{type:'tool_result', tool_use_id:<id>, content:<json>}` dans un message `user`, puis continue la boucle. Le champ `id` corrèle l'appel et le résultat comme requis par l'API Anthropic.
 
 ## Configuration
 
-Les réglages du fournisseur se trouvent sous la clé de config de plugin
-`plugins → melisaiengine → datas → AI → Claude` (voir `config/app.interface.php`) :
+Les réglages du fournisseur se trouvent sous :
 
-- `api_url` — par défaut `https://api.anthropic.com/v1/messages`.
-- `allowed_mimetypes` — images, PDF, types text/CSV/HTML/XML/JSON et Office (`.docx`/`.xlsx`).
+```
+config['plugins']['melisaiengine']['datas']['AI']['Claude']
+```
 
-Le même fichier déclare un bloc `Anthropic` décrivant la gestion des fichiers : seul le mode de
-téléversement `embed` est pris en charge, et le téléversement interne (via
-[melis-document-upload](/fr/reference/modules)) est disponible.
+| Clé | Rôle |
+| --- | --- |
+| `api_url` | L'URL du point de terminaison de l'API Messages Anthropic. |
+| `allowed_mimetypes` | Les types MIME acceptés pour les téléversements de fichiers. |
 
-## Base de données
+La clé API n'est **pas** lue depuis la configuration ou l'environnement — elle provient exclusivement de la ligne de clé BD du modèle (`mapk_*`).
 
-Le module ne possède aucune table. Ses deltas `install/dbdeploy/*.sql` se contentent
-d'**insérer/mettre à jour des lignes** dans des tables appartenant à `melis-ai-engine` :
+## Tables de base de données
 
-- `melis_ai_companies` — ajoute la société `Anthropic`.
-- `melis_ai_models` — ajoute les modèles Claude (Opus 4.1, Sonnet 4 / 4.5, Haiku 4.5) avec leurs
-  identifiants `mam_generative_model`, le mode de téléversement `embed` et l'indicateur de
-  téléversement interne.
-
-Les modèles arrivent avec `mam_status = 0` (inactifs) ; activez-les et renseignez leur clé dans le
-back-office Melis AI.
+Ce module ne possède aucune table. Tout l'état des conversations et de l'utilisation est stocké dans les tables du moteur (`melis_ai_conversation_state`, `melis_ai_daily_usage`).
 
 ## Fichiers clés
 
-| Sujet | Chemin |
+| Élément | Chemin |
 | --- | --- |
 | Service fournisseur | `vendor/melisplatform/melis-ai-engine-claude/src/Service/MelisAIEngineModelClaudeService.php` |
-| Fabrique du service | `vendor/melisplatform/melis-ai-engine-claude/src/Service/Factory/MelisAIEngineModelClaudeServiceFactory.php` |
-| Alias de service / routage | `vendor/melisplatform/melis-ai-engine-claude/config/module.config.php` |
-| Config fournisseur (api_url, mimetypes, modes de téléversement) | `vendor/melisplatform/melis-ai-engine-claude/config/app.interface.php` |
-| Amorçage BD (société + modèles) | `vendor/melisplatform/melis-ai-engine-claude/install/dbdeploy/` |
-| Bootstrap du module | `vendor/melisplatform/melis-ai-engine-claude/src/Module.php` |
 
 ## Voir aussi
 
-- [Melis AI](/fr/guide/ai) — le moteur d'IA, les agents et les modèles.
-- [MCP](/fr/guide/mcp) — comment les outils sont exposés au modèle.
+- [MelisAIEngine](/fr/reference/modules/melis-ai-engine) — le moteur abstrait, les tables partagées et le pont MCP.
+- [MelisAIEngineGemini](/fr/reference/modules/melis-ai-engine-gemini) — le fournisseur Google Gemini.
+- [MelisAI](/fr/reference/modules/melis-ai) — interface back-office pour gérer les instances, agents, outils et modèles.
 - [Référence des modules](/fr/reference/modules) — la carte complète des modules.

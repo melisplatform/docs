@@ -3,11 +3,13 @@ import { defineConfig } from 'vitepress'
 // Per-module reference pages (one .md per module, EN + /fr). Grouped by area
 // into collapsible sidebar sections, generated for both locales below.
 const MODULE_GROUPS: { text: string; slugs: string[] }[] = [
-  { text: 'Core & platform', slugs: ['melis-core', 'melis-asset-manager', 'melis-composerdeploy', 'melis-dbdeploy', 'melis-installer', 'melis-marketplace'] },
-  { text: 'CMS & front', slugs: ['melis-cms', 'melis-engine', 'melis-front', 'melis-demo-cms', 'melis-cms-news', 'melis-cms-prospects', 'melis-cms-slider', 'melis-cms-category2', 'melis-cms-page-historic', 'melis-cms-page-analytics', 'melis-cms-page-script-editor', 'melis-cms-site-robot'] },
-  { text: 'Commerce', slugs: ['melis-commerce', 'melis-commerce-order-invoice'] },
-  { text: 'Extend & utilities', slugs: ['melis-tool-creator', 'melis-templating-plugin-creator', 'melis-dashboard-plugin-creator', 'melis-data-source', 'melis-document-upload', 'melis-calendar', 'melis-messenger', 'melis-design', 'melis-small-business'] },
-  { text: 'AI', slugs: ['melis-ai', 'melis-ai-engine', 'melis-ai-engine-claude', 'melis-ai-engine-gemini', 'melis-ai-community-extensions', 'melis-ai-tool-creator'] }
+  { text: 'Core & platform', slugs: ['melis-core', 'melis-asset-manager', 'melis-cache-internal', 'melis-composerdeploy', 'melis-dbdeploy', 'melis-flyway', 'melis-installer', 'melis-marketplace', 'melis-phpinfo', 'melis-platform-skeleton', 'melis-sql'] },
+  { text: 'CMS & front', slugs: ['melis-cms', 'melis-engine', 'melis-front', 'melis-demo-cms', 'melis-cms-blog', 'melis-cms-comments', 'melis-cms-news', 'melis-cms-prospects', 'melis-cms-slider', 'melis-cms-category2', 'melis-cms-mcq', 'melis-cms-mcq-engine', 'melis-cms-page-historic', 'melis-cms-page-analytics', 'melis-cms-page-script-editor', 'melis-cms-share', 'melis-cms-site-robot', 'melis-cms-tags', 'melis-cms-user-account'] },
+  { text: 'Commerce', slugs: ['melis-commerce', 'melis-commerce-order-invoice', 'melis-demo-commerce'] },
+  { text: 'Extend & utilities', slugs: ['melis-tool-creator', 'melis-templating-plugin-creator', 'melis-dashboard-plugin-creator', 'melis-data-source', 'melis-calendar', 'melis-cron', 'melis-design', 'melis-document-generator', 'melis-document-generator-variables', 'melis-document-upload', 'melis-form-creator', 'melis-form-engine', 'melis-form-tool', 'melis-messenger', 'melis-small-business', 'melis-user-tabs'] },
+  { text: 'Authentication', slugs: ['melis-login-2fa', 'melis-login-2fa-email', 'melis-login-2fa-primotexto'] },
+  { text: 'Notifications', slugs: ['melis-newsletter', 'melis-primotexto', 'melis-tipimail'] },
+  { text: 'AI', slugs: ['melis-ai', 'melis-ai-engine', 'melis-ai-engine-claude', 'melis-ai-engine-gemini', 'melis-ai-community-extensions', 'melis-ai-tool-creator'] },
 ]
 const slugTitle = (s: string) =>
   s.split('-').map(p => (p === 'ai' ? 'AI' : p[0].toUpperCase() + p.slice(1))).join('')

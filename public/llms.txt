@@ -31,10 +31,12 @@
 
 ## Module reference pages (one per module)
 
-Core: melis-core, melis-asset-manager, melis-composerdeploy, melis-dbdeploy, melis-installer, melis-marketplace
-CMS & front: melis-cms, melis-engine, melis-front, melis-demo-cms, melis-cms-news, melis-cms-prospects, melis-cms-slider, melis-cms-category2, melis-cms-page-historic, melis-cms-page-analytics, melis-cms-page-script-editor, melis-cms-site-robot
-Commerce: melis-commerce, melis-commerce-order-invoice
-Extend & utilities: melis-tool-creator, melis-templating-plugin-creator, melis-dashboard-plugin-creator, melis-data-source, melis-document-upload, melis-calendar, melis-messenger, melis-design, melis-small-business
+Core & platform: melis-core, melis-asset-manager, melis-cache-internal, melis-composerdeploy, melis-dbdeploy, melis-flyway, melis-installer, melis-marketplace, melis-phpinfo, melis-platform-skeleton, melis-sql
+CMS & front: melis-cms, melis-engine, melis-front, melis-demo-cms, melis-cms-blog, melis-cms-comments, melis-cms-news, melis-cms-prospects, melis-cms-slider, melis-cms-category2, melis-cms-mcq, melis-cms-mcq-engine, melis-cms-page-historic, melis-cms-page-analytics, melis-cms-page-script-editor, melis-cms-share, melis-cms-site-robot, melis-cms-tags, melis-cms-user-account
+Commerce: melis-commerce, melis-commerce-order-invoice, melis-demo-commerce
+Extend & utilities: melis-tool-creator, melis-templating-plugin-creator, melis-dashboard-plugin-creator, melis-data-source, melis-calendar, melis-cron, melis-design, melis-document-generator, melis-document-generator-variables, melis-document-upload, melis-form-creator, melis-form-engine, melis-form-tool, melis-messenger, melis-small-business, melis-user-tabs
+Authentication: melis-login-2fa, melis-login-2fa-email, melis-login-2fa-primotexto
+Notifications: melis-newsletter, melis-primotexto, melis-tipimail
 AI: melis-ai, melis-ai-engine, melis-ai-engine-claude, melis-ai-engine-gemini, melis-ai-community-extensions, melis-ai-tool-creator
 
 ## Key file paths (in the installed skeleton)

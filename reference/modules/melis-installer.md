@@ -1,114 +1,83 @@
 # MelisInstaller
 
-> The first-run setup wizard that turns a fresh skeleton into a running Melis
-> Platform. Package: `melisplatform/melis-installer`.
+> The platform's first-run setup wizard — orchestrates system checks, database setup, module download and activation. Package `melisplatform/melis-installer`.
 
 ## Purpose
 
-`MelisInstaller` is the web installer Melis serves **before** the platform is set up. On a fresh
-checkout it intercepts every request and redirects to `/melis/setup`, where it walks the user
-through a step wizard: checking the system (PHP extensions, directory rights, Apache/vhost),
-configuring database credentials and environments, selecting and downloading modules, running the
-database deploy, and finally choosing the kind of install — an **empty** ready-to-use platform, a
-generated **site module**, or the **MelisCmsDemo** learning site. Once setup completes the module
-unloads itself and redirects to `/melis/login`, so it is only active during installation.
+MelisInstaller is a web wizard that runs on a fresh Melis skeleton before the platform is fully set up. It walks through server checks (PHP extensions, Apache modules, vhost environment variables, directory permissions), database connection testing, setup-type selection, module download via Composer, database-table import via DbDeploy, per-module configuration, and final installation. Once setup completes it is no longer active; day-to-day module management is handled from the back-office Modules tool (MelisComposerDeploy).
 
 ## Enable it
 
-`MelisInstaller` is a standard Laminas module declared in `config/melis.module.load.php`. On a
-fresh skeleton the module's own bootstrap (`src/Module.php`) writes a minimal loader containing
-only the modules needed to run the wizard:
+Add to `config/melis.module.load.php`:
 
 ```php
-['MelisAssetManager', 'MelisDbDeploy', 'MelisComposerDeploy', 'MelisInstaller', 'MelisModuleConfig']
+return [
+    'MelisInstaller',
+];
 ```
 
-It depends on `melisplatform/melis-core` (composer) and, at runtime, on `MelisComposerDeploy`
-(to read installed Composer packages) and `MelisDbDeploy` (to apply database deltas). It is gated
-by the `config/melis.install` flag file: while that flag is unset the installer forces the
-`/melis/setup` route; once installation finishes the module removes itself from the loader (and,
-for a site install, leaves the generated site module loaded). See
-[Module reference](/reference/modules) and [Build a site](/guide/build-a-site).
+MelisInstaller requires `melisplatform/melis-core` and `melisplatform/melis-engine` (`^5.2`) as Composer dependencies. During the install flow it drives **MelisComposerDeploy** (package download) and **MelisDbDeploy** (table imports), and once modules are activated **MelisAssetManager** serves their assets.
 
 ## Key services
 
-Registered in `config/module.config.php` under `service_manager` `aliases`:
-
 | Service alias | Role |
 | --- | --- |
-| `InstallerHelper` (`InstallHelperService`) | System & install helpers: `checkMysqlConnection()`, `isExtensionsExists()`, `checkEnvironmentVariables()`, `importSql()` / `getSqlFileTables()`, `isDbTableExists()` / `dropDbTable()`, `filePermission()` / `isDirWritable()`, `xcopy()` / `deleteDirectory()`, `getAvailableModules()`, `getPackagistMelisModules()` / `getPackagistMelisSites()`. |
-| `MelisInstallerModulesService` | Module discovery & the module loader: `getAllModules()`, `getVendorModules()`, `getUserModules()`, `getModulesAndVersions()`, `getModulePath()`, `getDependencies()` / `getChildDependencies()`, and `createModuleLoader()` which (re)writes `config/melis.module.load.php`. |
-| `MelisInstallerConfig` (`MelisInstallerConfigService`) | Reads the merged app config tree (the `plugins` array) by melisKey / path: `getItem()`, `getItemPerPlatform()`, `getMelisKeys()`, plus form-merging helpers (`getFormMergedAndOrdered()`). |
-| `MelisInstallerTranslation` (`MelisInstallerTranslationService`) | Supplies the installer's translation messages to the JS UI: `getTranslationMessages()`, `getTranslationsLocale()`, `getDateFormat()`. |
+| `InstallHelperService` | System and DB checks: required-extension verification, writable-path checks, `checkMysqlConnection()`, DB adapter + raw-SQL bootstrap, and `isDbTableExists()` (detects a partial install). Powers Steps 1 and 2 of the wizard. |
+| `MelisInstallerModulesService` | Module discovery and selection: all / vendor / user / site / core modules, versions, Composer paths. Powers the Step 3.1 module checklist. |
+| `MelisInstallerConfigService` | Reads and merges the installer's own config tree before MelisCore is fully available: `getItem()`, `getFormMergedAndOrdered()`. |
+| `MelisInstallerTranslationService` | Supplies the wizard's UI translation messages: `getTranslationMessages()`. Works before MelisCore is available. |
 
-The module also registers form-element factories (`MelisSelect`, `MelisText`,
-`MelisInstallerLanguageSelect`, `MelisInstallerWebOptionSelect`) and a `MelisPasswordValidator`.
+The module also registers form-element factories (`MelisSelect`, `MelisText`, `MelisInstallerLanguageSelect`, `MelisInstallerWebOptionSelect`) and a `MelisPasswordValidator` that enforces the admin-password policy on the Configuration step.
 
 ## Backoffice
 
-`MelisInstaller` does **not** add a backoffice tool — it runs before the backoffice exists. Its
-routes live under `/melis/` and target two controllers:
+MelisInstaller does not add a back-office tool. It runs before the back-office exists. Its UI is served by two controllers:
 
-| Route | Controller / action |
+| Controller | Role |
 | --- | --- |
-| `/` and `/melis/setup` | `MelisInstaller\Controller\Installer` → `indexAction` (the wizard UI) |
-| `/melis/get-translations` | `MelisInstaller\Controller\Translation` → `getTranslation` (UI strings as JSON) |
+| `InstallerController` | Drives every wizard step: system checks, DB test, setup-type selection, Composer download, DbDeploy import, module activation, per-module configuration, and final install. Also exposes the `rollBackAction`. |
+| `TranslationController` | Serves the wizard's own translation strings (the wizard runs before MelisCore translations are available). |
 
-`InstallerController` exposes the AJAX actions the wizard calls, e.g. `checkSysConfigAction`,
-`checkApacheSetupAction`, `checkFileSystemRightsAction`, `testDatabaseConnectionAction`,
-`newEnvironmentAction`, `addModulesToComposerAction`, `downloadModulesAction`,
-`activateModulesAction`, `execDbDeployAction`, `installSiteModuleAction`, `finalizeSetupAction`
-and `rollBackAction`.
+Two listeners hook into the install process:
 
-## Front office
-
-`MelisInstaller` ships no templating plugins or dashboard plugins. Its only view helpers are
-internal form renderers used by the wizard's `.phtml` (`MelisFieldCollection` / `melisFieldCollection`,
-`MelisFieldRow`).
-
-## Events
-
-The module attaches two listeners (in `src/Module.php`) that finalise the install:
-
-| Listener | Event | Role |
-| --- | --- | --- |
-| `MelisInstallerNewPlatformListener` | `melis_install_new_platform_start` | Builds the environment / site-domain configuration in the `melisinstaller` session container. |
-| `MelisInstallModuleConfigListener` | `melis_installer_last_process_start` | Renders the env config templates from `etc/MelisModuleConfig/` into the generated `MelisModuleConfig` module. |
+| Listener | Role |
+| --- | --- |
+| `MelisInstallModuleConfigListener` | Handles module-config writing during installation. |
+| `MelisInstallerNewPlatformListener` | Handles new-platform / environment setup. |
 
 ## Database tables
 
-`MelisInstaller` defines **no** `melis_*` tables of its own. During setup it *bootstraps* the
-platform's database: it imports the skeleton SQL (via `InstallerHelper::importSql()`) and runs the
-versioned deltas through `MelisDbDeploy` (`execDbDeployAction`). The tables created belong to the
-modules being installed (`melis-core`, `melis-cms`, …), not to the installer.
+MelisInstaller defines no tables of its own. During setup it bootstraps the platform's database by importing SQL and running versioned deltas through MelisDbDeploy. The tables created belong to the modules being installed (MelisCore, MelisCms, etc.).
 
 ## Example
 
-Discovering installable modules and the module loader from the installer services:
-
 ```php
-$modulesSvc = $sm->get('MelisInstallerModulesService');
+// Retrieve installable modules and test the DB connection from inside a controller
+$helper = $serviceManager->get('InstallHelperService');
+$connected = $helper->checkMysqlConnection($host, $dbName, $user, $password);
 
-$all = $modulesSvc->getAllModules();                 // user modules + composer melisplatform-modules
-$deps = $modulesSvc->getDependencies('MelisCms');    // ['MelisCore', 'MelisEngine', ...]
-
-// (re)write config/melis.module.load.php with a chosen set of modules
-$modulesSvc->createModuleLoader('config/', ['MelisCore', 'MelisEngine', 'MelisFront']);
+$modulesSvc = $serviceManager->get('MelisInstallerModulesService');
+$allModules  = $modulesSvc->getAllModules();          // full discoverable module list
+$versions    = $modulesSvc->getModulesAndVersions();  // name → installed version map
 ```
 
 ## Key files
 
 | Concern | Path |
 | --- | --- |
-| Bootstrap (route gating, self-unload) | `vendor/melisplatform/melis-installer/src/Module.php` |
-| Module + service/route config | `vendor/melisplatform/melis-installer/config/module.config.php` |
-| Minimal loader for the wizard | `vendor/melisplatform/melis-installer/config/module.load.php` |
-| Installer assets/interface | `vendor/melisplatform/melis-installer/config/app.interface.php` |
+| Module config, routes, service manager | `vendor/melisplatform/melis-installer/config/module.config.php` |
+| App forms config | `vendor/melisplatform/melis-installer/config/app.forms.php` |
+| Minimal wizard module loader | `vendor/melisplatform/melis-installer/config/module.load.php` |
 | Wizard controller | `vendor/melisplatform/melis-installer/src/Controller/InstallerController.php` |
 | Translation controller | `vendor/melisplatform/melis-installer/src/Controller/TranslationController.php` |
-| System / install helpers | `vendor/melisplatform/melis-installer/src/Service/InstallHelperService.php` |
-| Module discovery & loader writer | `vendor/melisplatform/melis-installer/src/Service/MelisInstallerModulesService.php` |
-| Config tree reader | `vendor/melisplatform/melis-installer/src/Service/MelisInstallerConfigService.php` |
-| Install finalisation listeners | `vendor/melisplatform/melis-installer/src/Listener/` |
-| Env config templates | `vendor/melisplatform/melis-installer/etc/MelisModuleConfig/` |
-| Wizard views | `vendor/melisplatform/melis-installer/view/melis-installer/installer/` |
+| System / DB / file-rights helpers | `vendor/melisplatform/melis-installer/src/Service/InstallHelperService.php` |
+| Module discovery service | `vendor/melisplatform/melis-installer/src/Service/MelisInstallerModulesService.php` |
+| Config merge service | `vendor/melisplatform/melis-installer/src/Service/MelisInstallerConfigService.php` |
+| Translation service | `vendor/melisplatform/melis-installer/src/Service/MelisInstallerTranslationService.php` |
+| Admin-password validator | `vendor/melisplatform/melis-installer/src/Validator/MelisPasswordValidator.php` |
+| Wizard form view helpers | `vendor/melisplatform/melis-installer/src/Form/View/Helper/` |
+| Install listeners | `vendor/melisplatform/melis-installer/src/Listener/` |
+| Wizard views | `vendor/melisplatform/melis-installer/view/` |
+| Language files | `vendor/melisplatform/melis-installer/language/` |
+
+See also: [MelisCore](/reference/modules/melis-core) · [MelisDbDeploy](/reference/modules/melis-dbdeploy) · [MelisComposerDeploy](/reference/modules/melis-composerdeploy) · [MelisAssetManager](/reference/modules/melis-asset-manager)

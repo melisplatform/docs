@@ -1,106 +1,121 @@
 # MelisAIToolCreator
 
-> AI-assisted back-office tool that creates and edits Melis modules through a chat agent.
+> AI-assisted back-office tool that builds and edits whole Melis modules through a chat agent.
 > Package `melisplatform/melis-ai-tool-creator`.
 
 ## Purpose
 
-`MelisAIToolCreator` adds an **AI Tool Creator** entry to the Melis back-office tools tree. From a
-chat panel it drives an AI agent (the *Tool Builder*) that scaffolds a complete Laminas module —
-config, controller, model, views, language files, form fields, even a database table — and then
-activates it. It is the AI counterpart of [`melis-tool-creator`](/reference/modules); the GUI
-generator stays available for hand-driven scaffolding (see [Create a tool](/guide/create-a-tool)).
-The agent talks to the platform through a dedicated MCP server, so this module is part of the wider
-AI stack — see [AI](/guide/ai) and [MCP](/guide/mcp).
+`MelisAIToolCreator` adds an **AI Tool Creator** entry to the Melis AI back-office menu. It ships a
+dedicated AI agent (*Tool Builder*) and an MCP server; the agent scaffolds complete Laminas modules
+under `module/AIModules/` by calling code-generation tools over JSON-RPC. It is the reference
+example of the MelisAI **app-extension pattern**: it registers the `aitoolcreator` instance, the
+MCP server, and opens the engine's chat helper.
 
 ## Enable it
 
-Standard Laminas module. Add it to `config/melis.module.load.php`:
+Add to `config/melis.module.load.php`:
 
 ```php
-'MelisAIToolCreator',
+return [
+    'MelisAIToolCreator',
+];
 ```
 
-Requires PHP `^8.1 | ^8.3` and `melisplatform/melis-ai` `^5.3` (which pulls in
-[`melis-ai-engine`](/reference/modules)). The module is `dbdeploy`-enabled: its install deltas
-insert the *Tool Builder* AI agent (`mai_instance_id = aitoolcreator`) and register the agent's
-tool list. It ships no site, only a back-office tool.
+Requires `melisplatform/melis-ai` `^5.3` (which pulls in `melis-ai-engine`). The module is
+`dbdeploy`-enabled: on install its deltas insert the *Tool Builder* agent and the `aitoolcreator`
+instance into the engine's `melis_ai_agents` / `melis_ai_instances` tables.
 
 ## Key services
 
 | Service alias | Role |
 | --- | --- |
-| `MelisAIToolCreatorService` | Thin event-firing service (`getToolConfig()`); the real work is done by the AI agent + MCP server, not by this PHP service. |
+| `MelisAIToolCreatorService` | `getToolConfig()`; fires `melisaitoolcreator_service_get_tool_config_start/_end`. The real work is performed by the AI agent + MCP server. |
 
 ## Backoffice
 
-The tool is declared in `config/app.interface.php` under the AI tools section
-(`melisai_tool_section`) and routed by `config/module.config.php`. Controller
-`MelisAIToolCreator\Controller\IndexController`:
+The tool is declared in `config/app.toolstree.php` (icon `fa-magic`) and routed by
+`config/module.config.php` (`/MelisAIToolCreator/[:controller[/:action]]`). Controller
+`MelisAIToolCreator\Controller\IndexController` exposes:
 
-| melisKey | Action | Role |
+| Action | Role |
+| --- | --- |
+| `renderTool` / `renderToolHeader` / `renderToolContent` | Render the tool shell, header, and the launch panel (mode picker + module dropdown). |
+| `launchAgentAction` | POST to `/melis/MelisAIToolCreator/Index/launchAgent`; opens the engine chat for the `aitoolcreator` instance via `AIChatViewHelper`. |
+
+The module dropdown for `edit_existing` is populated by scanning `module/AIModules/` with
+`glob(... GLOB_ONLYDIR)`.
+
+### Launch modes
+
+| Button (UI label) | `mode` | Behaviour |
 | --- | --- | --- |
-| `melisaitoolcreator_tool` | `render-tool` | Tool shell. |
-| `melisai_toolcreator_header` | `render-tool-header` | Header zone. |
-| `melisai_toolcreator_content` | `render-tool-content` | Launch panel: mode picker + the list of editable modules read from `module/AIModules`. |
-| — | `launch-agent` | POST endpoint that boots the AI chat (`AIChatViewHelper`) for the chosen mode. |
-
-The launch panel offers three modes (see `launchAgentAction`):
-
-- **`new`** — create a module/tool from scratch.
-- **`continue_session`** — resume the previous chat session (session is not cleared).
-- **`edit_existing`** — load a module from `module/AIModules` and constrain the agent to edit only
-  inside that module's path.
-
-The chat is started against the AI instance `aitoolcreator` via
-`/melis/MelisAIToolCreator/Index/launchAgent`.
+| New tool | `new` | Agent calls `createModule` first, then `updateFiles` the two language files using the SCAN RESULTS keys. |
+| Continue my last session | `continue_session` | `clearSession=false` — resumes the previous conversation state for the `aitoolcreator` instance. |
+| Edit existing tool | `edit_existing` | Pre-selects the chosen module; agent may only touch files inside that module path, must `readFile` before `updateFiles`, and must not call `createModule`. |
 
 ## The Tool Builder agent & MCP server
 
-The agent (DB instance `aitoolcreator`, agent name *Tool Builder*) is granted a tool list by the
-install delta `26051502_update_agent_tools.sql`. Those tools split in two groups:
+`config/mcp.tools.php` declares the MCP server:
 
-- **Module generation (MCP server `tool_creator`)** — `config/mcp.tools.php` registers a stdio MCP
-  server (`mcp/toolcreator/bin/server.php`) exposing **`createModule`**, **`activateModule`**,
-  **`deactivateModule`** (implemented in `ToolCreatorOperations`). `createModule` scaffolds the
-  module (optionally a multi-locale, `_texts`-table variant); `activateModule` adds it to the load
-  list and clears caches, gated by a personalization check so unedited stubs are rejected.
-- **DB / file helpers (provided by the AI engine)** — `getTableStructure`, `createDatabaseTable`,
-  `addDBTableColumns`, `selectData`, `insertData`, `updateData`, `deleteData`, `readFile`,
-  `createFile`, `createDirectory`, `pathExists`, `updateFiles`, … used by the agent to inspect data
-  and write files.
-
-Generated modules are written under `module/AIModules/<ModuleName>/`.
-
-You can run the MCP server standalone for inspection:
-
-```bash
-npx @modelcontextprotocol/inspector \
-  php vendor/melisplatform/melis-ai-tool-creator/mcp/toolcreator/bin/server.php
+```php
+$config['mcp']['servers']['tool_creator'] = [
+    'enabled'        => true,
+    'module'         => 'melis-ai-tool-creator',
+    'args'           => '.../mcp/toolcreator/bin/server.php',
+    'timeout'        => 600,
+    'retry_attempts' => 1,
+];
 ```
+
+The long timeout (600 s) reflects that module generation can take minutes.
+
+Tools are registered in
+`config['plugins']['melisaiengine']['datas']['function_declarations']` with `mcp: true`; the engine
+routes calls to this server. They appear under the **module-builder** group in the agent's AI Tools
+allow-list.
+
+### Module-builder tools (MCP server `tool_creator`)
+
+| Tool | Purpose |
+| --- | --- |
+| `createModule` | Scaffold a full Laminas module under `module/AIModules/`. Inputs: `moduleName`, `functionality`, `needDBTable`, `databaseTableStructure{tableName, fields[{name,type,primary}]}`. Returns **SCAN RESULTS** (generated config + view keys). |
+| `updateFiles` | Write or modify files inside the module (the agent's main editing tool). |
+| `activateModule` | Enable the module and clear caches. After activation the agent instructs the user to reload. |
+| `deactivateModule` | Disable the module and clear caches. |
+| `generateBundle` | Rebuild CSS/JS bundles after editing `public/`. |
+
+The agent also has access to the engine's shared **filesystem** tools (`createFile`,
+`createDirectory`, `pathExists`, `readFile`, `deleteFile`, `deleteDirectory`) and **DB-schema**
+tools (`getTableStructure`, `createDatabaseTable`, `addDBTableColumns`, …) — see
+[MelisAI §A5.3](/reference/modules/melis-ai).
+
+::: warning Safety note
+The file-writing tools are constrained to `module/AIModules/` and the agent prompts forbid touching
+paths outside the chosen module. Generated modules are real PHP that gets activated — **review them
+before production**, and treat `activateModule` as a privileged action. The agent narrates one short
+sentence before each tool call, making the build auditable in the chat transcript.
+:::
 
 ## Database tables
 
-This module adds **no `melis_*` table of its own**. Its `dbdeploy` deltas write into
-`melis-ai-engine` tables — chiefly `melis_ai_agents` (the *Tool Builder* row and its
-`maa_agent_tools` list). Tables for modules the agent generates are created at runtime by the
-`createDatabaseTable` tool, not shipped here.
+This module owns **no `melis_*` tables**. Its dbdeploy deltas write into the engine's
+`melis_ai_instances` and `melis_ai_agents` tables. Tables for modules the agent generates are
+created at runtime by the `createDatabaseTable` tool.
 
 ## Key files
 
 | Concern | Path |
 | --- | --- |
-| Module bootstrap | `vendor/melisplatform/melis-ai-tool-creator/src/Module.php` |
 | Controller | `vendor/melisplatform/melis-ai-tool-creator/src/Controller/IndexController.php` |
 | Service | `vendor/melisplatform/melis-ai-tool-creator/src/Service/MelisAIToolCreatorService.php` |
-| Back-office tool tree / interface | `vendor/melisplatform/melis-ai-tool-creator/config/app.interface.php`, `config/app.toolstree.php`, `config/app.tools.php` |
 | MCP registration | `vendor/melisplatform/melis-ai-tool-creator/config/mcp.tools.php` |
-| MCP server + operations | `vendor/melisplatform/melis-ai-tool-creator/mcp/toolcreator/bin/server.php`, `mcp/toolcreator/src/ToolCreatorOperations.php` |
-| Agent install deltas | `vendor/melisplatform/melis-ai-tool-creator/install/dbdeploy/26051501_insert_tool_builder_agent.sql`, `26051502_update_agent_tools.sql` |
-| Views | `vendor/melisplatform/melis-ai-tool-creator/view/melis-ai-tool-creator/index/` |
+| MCP server entry point | `vendor/melisplatform/melis-ai-tool-creator/mcp/toolcreator/bin/server.php` |
+| Tool tree / assets | `vendor/melisplatform/melis-ai-tool-creator/config/app.toolstree.php`, `config/app.interface.php` |
+| Route config | `vendor/melisplatform/melis-ai-tool-creator/config/module.config.php` |
 
 ## See also
 
-- [Create a tool](/guide/create-a-tool) — the GUI tool generator.
-- [AI](/guide/ai) and [MCP](/guide/mcp) — the AI engine and MCP integration.
-- [Module reference](/reference/modules) — full module map.
+- [MelisAI](/reference/modules/melis-ai) — manage instances, agents, tools, models and keys.
+- [MelisAIEngine](/reference/modules/melis-ai-engine) — the contract, shared tables, MCP/tool bridge.
+- [MelisAIEngineClaude](/reference/modules/melis-ai-engine-claude) · [MelisAIEngineGemini](/reference/modules/melis-ai-engine-gemini) — provider implementations.
+- [MelisAICommunityExtensions](/reference/modules/melis-ai-community-extensions) — another app-extension example.

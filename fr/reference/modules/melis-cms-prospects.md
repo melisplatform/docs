@@ -1,151 +1,124 @@
 # MelisCmsProspects
 
-> Capture de prospects / leads pour les sites Melis — un formulaire de contact en front-office,
-> un outil de gestion en back-office et l'intégration RGPD. Package
-> `melisplatform/melis-cms-prospects`.
+> Système de gestion de prospects / contacts : formulaire de contact en front-office, gestion des prospects en back-office et intégration RGPD. Package `melisplatform/melis-cms-prospects`.
 
-## Objectif
+## Présentation
 
-`MelisCmsProspects` transforme les soumissions de formulaire en front-office (typiquement un
-formulaire « contactez-nous ») en **prospects** stockés en base. Les éditeurs déposent le plugin
-de templating `MelisCmsProspectsShowFormPlugin` dans une page ; les visiteurs le remplissent ;
-les soumissions sont enregistrées puis consultées, modifiées, filtrées, exportées (CSV) et
-supprimées depuis un outil de back-office. Le module fournit aussi un widget de statistiques sur
-le tableau de bord, des **thèmes** configurables (listes de sujets) pour le champ « sujet » du
-formulaire, et toute la mécanique RGPD (listeners d'info / extraction / suppression utilisateur
-ainsi que la participation à l'auto-suppression).
+`MelisCmsProspects` capture les soumissions de formulaire de contact des visiteurs en tant que **prospects** (leads) stockés en base de données. Les utilisateurs du back-office parcourent, filtrent, modifient, exportent (CSV) et suppriment ces leads, et les classifient par **thèmes**. Le module inclut un widget de statistiques pour le tableau de bord et s'intègre aux outils RGPD de la plateforme (informations utilisateur / extraction / suppression + cycle d'auto-suppression).
 
 ## Activation
 
-Un module Laminas standard. Il est listé dans `config/melis.module.load.php`, entre
-`MelisCmsNews` et `MelisCmsSlider` :
+Ajouter dans `config/melis.module.load.php` :
 
 ```php
 return [
-    // …
     'MelisCmsProspects',
-    // …
 ];
 ```
 
-Dépendances (depuis `composer.json`) : `melis-core`, `melis-engine`, `melis-front`, `melis-cms`
-(plus `laminas/laminas-mvc-plugin-flashmessenger`). Il est en `dbdeploy: true`, ses tables sont
-donc créées/mises à jour via [melis-dbdeploy](/fr/reference/modules).
+Dépendances : `melis-core`, `melis-engine`, `melis-front`, `melis-cms` (`^5.2`) et
+`laminas/laminas-mvc-plugin-flashmessenger`. Le module est en `dbdeploy: true` — ses tables sont
+créées/mises à jour via le mécanisme dbdeploy.
 
-## Services clés
+## Services principaux
 
-Enregistrés comme alias de `service_manager` dans `config/module.config.php` :
-
-| Alias | Rôle |
+| Alias de service | Rôle |
 | --- | --- |
-| `MelisCmsProspectsService` / `MelisProspectsService` | Service principal (`MelisCmsProspectsService`). `saveProspectsDatas($datas, $prosId = null)` enregistre/met à jour un prospect ; `getProspectsDataForWidgets($widgetId)`, `getProspectsDataByDate($type, $date)` et `getWidgetProspects($identifier)` calculent les statistiques du tableau de bord/de l'outil (totaux, mois en cours, moyenne mensuelle). |
-| `MelisProspectsGdprAutoDeleteService` | `MelisCmsProspectsGdprAutoDeleteService` — implémente `MelisCoreGdprAutoDeleteInterface` (liste des tags, listes d'utilisateurs d'avertissement / second avertissement, action de suppression) pour le cron RGPD d'auto-suppression du core. |
+| `MelisCmsProspectsService` / `MelisProspectsService` | Service principal. `saveProspectsDatas($datas, $prosId = null)` crée ou met à jour un prospect ; `getProspectsDataForWidgets($widgetId = '')` retourne les totaux / mois en cours / moyennes ; `getProspectsDataByDate($type, $date)` compte les inscriptions par date ; `getWidgetProspects($identifier)` récupère les données pour un widget. |
+| `MelisProspectsGdprAutoDeleteService` | Gère le cycle d'auto-suppression RGPD (liste des modules, liste des tags, listes d'utilisateurs d'avertissement / second avertissement, suppression du compte). |
 
-Passerelles de table (également aliasées) : `MelisProspects` (`MelisProspectTable`),
-`MelisCmsProspectsThemeTable`, `MelisCmsProspectsThemeItemTable`,
-`MelisCmsProspectsThemeItemTransTable`. `MelisProspectTable` expose des requêtes notables comme
-`getData(...)` (flux de la datatable), `getDataForGdpr(...)`, `getProspectsOrderByDate($order)`,
-`getCurrentMonth()`, `getAvgMonth($months)` et `getNumberProspectsPerDay($maxDays)`.
+Passerelles de table : `MelisProspects`, `MelisCmsProspectsThemeTable`,
+`MelisCmsProspectsThemeItemTable`, `MelisCmsProspectsThemeItemTransTable`.
 
 ## Back-office
 
-Déclaré dans `config/app.interface.php` et `config/app.tools.php`, sous la section des outils
-Marketing (`melisprospects_tools_section`, icône `fa-user-plus`). Les contrôleurs sont sous
-`MelisCmsProspects\Controller` :
+Deux outils principaux enregistrés sous la section des outils Marketing :
 
-| Outil (melisKey) | Contrôleur / action | Rôle |
+| Outil | Contrôleur | Rôle |
 | --- | --- | --- |
-| `MelisCmsProspects_tool_prospects` | `ToolProspects` → `render-prospects` | La liste des prospects : datatable avec filtres limite/date/site/type, recherche, export CSV, modales d'édition et de suppression, plus trois widgets d'en-tête (total, ce mois-ci, moyenne mensuelle). |
-| `MelisCmsProspects_tool_themes` | `ProspectThemes` → `tool-container` | Gérer les **thèmes** de prospects (groupes de sujets). |
-| `MelisCmsProspects_tool_theme_items` | `ProspectThemeItems` → `tool-container` | Gérer les **items de thème** traduisibles (les options de sujet proposées dans le formulaire front). |
+| Prospects | `ToolProspectsController` | Liste tous les leads avec filtres sur la limite / plage de dates / site / type, recherche, export CSV (`exportToCsvAction`), modale d'édition et suppression. Trois widgets de statistiques en en-tête : total, ce mois-ci, moyenne mensuelle. |
+| Thèmes | `MelisCmsProspectsThemesController` / `MelisCmsProspectsThemeItemsController` | Gérer les **thèmes** de sujets et leurs **items** traduisibles (les options du menu déroulant de sujet affichées dans le formulaire front). |
 
-La datatable des prospects est alimentée par
-`/melis/MelisCmsProspects/ToolProspects/getToolProspectData`. Des fabriques d'éléments de
-formulaire personnalisés sont enregistrées : `MelisCmsProspectThemeSelect`,
-`MelisCmsProspectThemeItemSelect` et `MelisCmsProspectName`.
+Un **plugin de tableau de bord** (`MelisCmsProspectsStatisticsPlugin`, section `MelisMarketing`)
+ajoute un graphique « Prospects Statistics » (Flot) au tableau de bord du back-office.
 
-Un **plugin de tableau de bord**, `MelisCmsProspectsStatisticsPlugin`
-(`config/dashboard-plugins/MelisCmsProspectsStatisticsPlugin.config.php`), ajoute un widget
-« Prospects Statistics » (graphiques Flot ligne/barres) — voir [Plugins](/fr/guide/plugins).
+### RGPD & hooks d'événements
 
-### RGPD & listeners
+Événements au niveau des contrôleurs (à attacher avec `MelisCmsProspects` comme identifiant cible) :
 
-`src/Module.php` attache un ensemble de listeners au bootstrap : RGPD back-office (info /
-extraction / suppression utilisateur : `MelisCmsProspectsGdprUserInfoListener`,
-`…GdprUserExtractListener`, `…GdprUserDeleteListener`), un listener d'affichage de colonne de la
-datatable, un listener de type d'édition pour le tool-creator, un listener de flash-messenger, et
-les listeners RGPD d'**auto-suppression** (liste des modules, liste des tags, listes
-d'utilisateurs d'avertissement / second avertissement, action de suppression). Les mappings de
-champs RGPD sont configurés dans `config/app.gdpr.php` et `config/app.interface.php`
-(`gdpr.tags`).
+| Nom de l'événement | Déclenché par |
+| --- | --- |
+| `meliscmsprospects_toolprospects_save_start` / `_end` | `ToolProspectsController` |
+| `meliscmsprospects_toolprospects_delete_start` / `_end` | `ToolProspectsController` |
+| `meliscmsprospects_theme_save_end` / `…_delete_end` | `ProspectThemesController` |
+| `meliscmsprospects_theme_item_save_end` | `ProspectThemeItemsController` |
 
-## Front-office
+```php
+$sharedEvents->attach(
+    'MelisCmsProspects',
+    'meliscmsprospects_toolprospects_save_end',
+    $fn,
+    50
+);
+```
 
-Le plugin de templating `MelisCmsProspectsShowFormPlugin`
-(`src/Controller/Plugin/MelisCmsProspectsShowFormPlugin.php`, config
-`config/plugins/MelisCmsProspectsShowFormPlugin.config.php`) affiche le formulaire de
-prospect/contact. Il étend `MelisEngine\Controller\Plugin\MelisTemplatingPlugin` avec
-`configPluginKey = 'meliscmsprospects'` et `pluginXmlDbKey = 'melisCmsProspects'`. Sa
-méthode `front()` :
+Les listeners RGPD (informations utilisateur, extraction, suppression, auto-suppression) sont câblés dans `src/Module.php`. Les mappings de champs RGPD se trouvent dans `config/app.gdpr.php`.
 
-- construit le formulaire à partir des `fields` sélectionnés/obligatoires (`pros_name`,
-  `pros_company`, `pros_country`, `pros_telephone`, `pros_email`, `pros_theme`, `pros_message`) ;
-- sur un POST valide, résout l'id du site (depuis la config ou l'arbre des pages) et appelle
-  `MelisProspectsService::saveProspectsDatas()` ;
-- déclenche l'événement `meliscms_prospects_plugin_save` et affiche un message flash de succès.
+## Front office
 
-L'éditeur back-office expose trois onglets de configuration (`config/plugins/…`) : template et
-site (`MelisCmsPluginSiteSelect`), les champs à afficher / rendre obligatoires, et le **thème** de
-sujet (`MelisCmsProspectThemeSelect`). Le plugin est enregistré dans `module.config.php` sous
-`controller_plugins`, dans la section de plugins `MelisMarketing`. Voir
-[Plugins](/fr/guide/plugins) et [Construire un site](/fr/guide/build-a-site).
+Le plugin de contrôleur `MelisCmsProspectsShowFormPlugin` affiche le formulaire de contact en
+front-office. Déposez le bloc **Show Form** sur une page depuis le sélecteur de plugins de
+l'éditeur de pages ; l'éditeur expose trois onglets de configuration :
+
+| Onglet | Contrôles |
+| --- | --- |
+| Properties | Template de rendu (`template_path`) et site source (`pros_site_id`). |
+| Fields | Table de construction des champs — activer/désactiver Afficher / Obligatoire par champ, glisser les lignes pour réordonner. Champs disponibles : `pros_name`, `pros_company`, `pros_country`, `pros_email`, `pros_telephone`, `pros_message`. La case Obligatoire n'est activée que lorsque le commutateur Afficher d'un champ est actif. |
+| Theme | Le thème qui alimente le menu déroulant de sujet du formulaire. |
+
+Fichier de configuration : `config/plugins/MelisCmsProspectsShowFormPlugin.config.php`. Template front :
+`view/.../plugins/prospects-form.phtml`.
 
 ## Tables de base de données
 
-Créées depuis `install/sql/setup_structure.sql` (et les deltas dbdeploy sous
-`install/dbdeploy/`) :
-
-| Table | Rôle |
+| Table | Contenu |
 | --- | --- |
-| `melis_cms_prospects` | Les prospects capturés (`pros_id`, `pros_site_id`, `pros_type`, `pros_theme`, `pros_name`, `pros_email`, `pros_telephone`, `pros_message`, `pros_company`, `pros_country`, `pros_contact_date`, `pros_gdpr_lastdate`). |
-| `melis_cms_prospects_themes` | Thèmes de sujet (`pros_theme_id`, `pros_theme_name`, `pros_theme_code`). |
-| `melis_cms_prospects_theme_items` | Items de thème liés à un thème (`pros_theme_item_id`, `pros_theme_id`). |
-| `melis_cms_prospects_theme_items_trans` | Traductions par langue des items de thème (`item_trans_id`, `item_trans_text`, `item_trans_lang_id`, `item_trans_theme_item_id`). |
+| `melis_cms_prospects` | Un lead capturé : site, type, thème, nom, email, téléphone, message, société, pays, date de contact, dernière date RGPD. PK : `pros_id`. |
+| `melis_cms_prospects_themes` | Thèmes de sujets (`pros_theme_name`, `pros_theme_code`). PK : `pros_theme_id`. |
+| `melis_cms_prospects_theme_items` | Items appartenant à un thème. PK : `pros_theme_item_id`. |
+| `melis_cms_prospects_theme_items_trans` | Traductions par langue des items de thème. PK : `item_trans_id`. |
 
 ## Exemple
 
-Afficher le plugin de formulaire de prospect depuis un contrôleur / une vue (d'après le docblock
-du plugin) :
-
 ```php
-$plugin     = $this->MelisCmsProspectsShowFormPlugin();
-$pluginView = $plugin->render([
-    'template_path' => 'MySiteTest/contactus/prospectsForm',
-]);
-$view->addChild($pluginView, 'prospectsForm');
-// dans la vue : echo $this->prospectsForm;
-```
+$prospects = $this->getServiceManager()->get('MelisProspectsService');
 
-En pratique, le plugin est normalement ajouté en le glissant dans un `MelisDragDropZone` d'une
-page, où son template, son site, ses champs et son thème sont configurés via l'éditeur.
+// Create or update a prospect
+$id = $prospects->saveProspectsDatas($datas, $prosId);
+
+// Get registration count by date
+$nb = $prospects->getProspectsDataByDate('monthly', '2017-10-04 12:00:00');
+
+// Get stats for backoffice widgets (total / this month / average)
+$w  = $prospects->getProspectsDataForWidgets();
+```
 
 ## Fichiers clés
 
-| Sujet | Chemin (sous `vendor/melisplatform/melis-cms-prospects/`) |
+| Élément | Chemin (sous `vendor/melisplatform/melis-cms-prospects/`) |
 | --- | --- |
 | Config module / routes / services | `config/module.config.php` |
-| Arbre des outils back-office | `config/app.interface.php` |
+| Arbre de l'interface back-office | `config/app.interface.php` |
 | Tables & formulaires des outils | `config/app.tools.php` |
 | Config du plugin de templating | `config/plugins/MelisCmsProspectsShowFormPlugin.config.php` |
-| Config du widget de tableau de bord | `config/dashboard-plugins/MelisCmsProspectsStatisticsPlugin.config.php` |
+| Config du widget de tableau de bord | `config/dashboard-plugins/` |
 | Mapping des champs RGPD | `config/app.gdpr.php` |
 | Service principal | `src/Service/MelisCmsProspectsService.php` |
-| Service RGPD d'auto-suppression | `src/Service/MelisCmsProspectsGdprAutoDeleteService.php` |
+| Service RGPD d'auto-suppression | `src/Service/` |
 | Plugin de formulaire front | `src/Controller/Plugin/MelisCmsProspectsShowFormPlugin.php` |
 | Widget de tableau de bord | `src/Controller/DashboardPlugins/MelisCmsProspectsStatisticsPlugin.php` |
 | Contrôleurs back-office | `src/Controller/ToolProspectsController.php`, `MelisCmsProspectsThemesController.php`, `MelisCmsProspectsThemeItemsController.php` |
-| Passerelle de table des prospects | `src/Model/Tables/MelisProspectTable.php` |
-| Listeners (bootstrap) | `src/Module.php`, `src/Listener/` |
-| SQL d'installation | `install/sql/setup_structure.sql`, `install/dbdeploy/` |
+| Passerelles de table | `src/Model/Tables/` |
+| Listeners RGPD & bootstrap | `src/Module.php`, `src/Listener/` |
 
-Voir la [Référence des modules](/fr/reference/modules) pour la carte complète des modules.
+Voir aussi : [Référence des modules](/fr/reference/modules) · [melis-cms](/fr/reference/modules/melis-cms) · [melis-core](/fr/reference/modules/melis-core)

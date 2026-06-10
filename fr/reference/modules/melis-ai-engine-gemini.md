@@ -2,116 +2,106 @@
 
 > Fournisseur Google Gemini pour le moteur Melis AI — paquet `melisplatform/melis-ai-engine-gemini`.
 
-## Objectif
+## Présentation
 
-`MelisAIEngineGemini` branche Google Gemini sur [Melis AI](/fr/guide/ai). C'est une
-**implémentation de fournisseur** : il étend la classe abstraite `MelisAIEngineModelService` de
-`MelisAIEngine` et fournit le client HTTP propre à Gemini, le format de requête (le schéma
-`contents` + `parts`), l'appel d'outils/fonctions (`functionDeclarations`), la gestion des fichiers
-(File API ou intégration inline) et l'analyse de la consommation de jetons. Il n'apporte aucune
-interface propre — les agents, instances et scénarios se configurent dans le backoffice IA, et le
-moteur achemine une requête ici dès que la société du modèle actif est **Google**. Voir
-[Melis AI](/fr/guide/ai) et [MCP et outils](/fr/guide/mcp) pour le déroulé complet.
+`MelisAIEngineGemini` est l'implémentation concrète Google Gemini du contrat
+`MelisAIEngineModelService` de `MelisAIEngine`. Il fournit la configuration spécifique du client
+HTTP Gemini, le format de payload `generateContent` (le schéma `contents` / `parts`), le mapping
+outil/appel de fonction, la gestion des fichiers via la File API ou l'intégration inline, et
+l'analyse de la consommation de jetons. Le module est sans état (aucune table qui lui appartient)
+et ne fournit aucune interface — tous les écrans IA proviennent de `melis-ai` /
+`melis-ai-engine`.
 
 ## Activation
 
-C'est un module Laminas standard (nom de module `MelisAIEngineGemini`). Installez-le avec Composer
-(`composer require melisplatform/melis-ai-engine-gemini`) puis ajoutez-le à
-`config/melis.module.load.php` :
+Ajoutez dans `config/melis.module.load.php` :
 
 ```php
-'MelisAIEngineGemini',
+return [
+    'MelisAIEngineGemini',
+];
 ```
 
-Il **nécessite `melisplatform/melis-ai-engine` (`^5.3`)** et PHP `^8.1|^8.3`. Ses deltas `dbdeploy`
-enregistrent la société **Google** et les modèles Gemini. À l'exécution, la gestion des fichiers
-peut aussi s'appuyer sur **MelisDocumentUpload** (quand l'option « internal upload » du modèle est
-activée). Le fournisseur n'est utilisé que si le module figure dans la liste des modules actifs — le
-moteur le vérifie avant de l'instancier.
+Nécessite `melisplatform/melis-ai-engine` `^5.3`. Le moteur sélectionne automatiquement ce
+fournisseur à l'exécution lorsque le nom de société du modèle actif contient **`Google`** et que
+ce module est installé ; il construit `MelisAIEngineModelGeminiService` via
+`$serviceManager->build(MelisAIEngineModelGeminiService::class, ['modelId' => …, 'agentId' => …])`.
 
-## Comment le moteur le sélectionne
-
-`MelisAIEngineService::getActiveModelClass($company, $modelId, $agentId)` (dans `melis-ai-engine`)
-examine le `macp_company_name` du modèle actif. Lorsqu'il contient **`Google`** et que
-`MelisAIEngineGemini` est actif, il construit `MelisAIEngineModelGeminiService` via le service
-manager (`build()` avec les options `modelId` / `agentId`). Aucun câblage manuel n'est nécessaire.
-
-## Services clés
+## Services principaux
 
 | Alias de service | Rôle |
 | --- | --- |
-| `MelisAIEngineModelGeminiService` | Le fournisseur Gemini. Sous-classe de `MelisAIEngine\Service\MelisAIEngineModelService`. Construit par requête avec `modelId` + `agentId`. |
+| `MelisAIEngineModelGeminiService` | Le fournisseur Gemini — sous-classe de `MelisAIEngineModelService`, construit par requête avec `modelId` + `agentId`. |
 
 Méthodes notables de `MelisAIEngineModelGeminiService` :
 
-| Méthode | Rôle |
+| Méthode | Implémentation Gemini |
 | --- | --- |
-| `setClient()` | Construit le client HTTP Laminas ; URI = `{api_url}/models/{mam_generative_model}:generateContent?key={mapk_keys}`, POST, délai 3600 s. |
-| `sendCustomAI(?array $payload = [])` | Envoie le payload ; analyse `candidates`/`parts` ; dispatche les `functionCall` (MCP ou `MelisAIEngineFunctionService`) ; réessaie sur 5xx/429 ; renvoie `result`, `errors`, `responseData`, `payload`, `needs_continuation`, `session_id`, `tool_results`. |
-| `continueConversation($sessionId, $continuationContext, $existingContext = [])` | Réhydrate `contents` depuis la session PHP (ou un contexte de repli) et rappelle `sendCustomAI()`. |
-| `addToolsToPayload($payload)` | Ajoute `tools[].functionDeclarations` + `toolConfig.functionCallingConfig` (mode `AUTO`) ; sans fonctions, ajoute à la place l'outil `url_context`. |
-| `addContentToPayload($payload, $role, $prompt, $files, $content)` / `constructContent($role, $prompt, $files)` | Construisent une entrée `contents` (`role` + `parts` : `text`, `fileData`, `inlineData`). |
-| `processFiles($files)` / `processContextFiles($files)` | Normalisent les téléversements selon le mode d'upload du modèle (`fileapi` / `embed`) et l'indicateur d'upload interne. |
-| `setPromptTokenCount()` / `setResponseTokenCount()` / `setTotalTokenCount()` | Lisent `usageMetadata.{promptTokenCount,candidatesTokenCount,totalTokenCount}`. |
-| `getAllowedMimetypes()` / `getMessageKey()` | Renvoient les types MIME autorisés configurés / la clé de message (`contents`). |
-
-Constantes : `FILEAPI_UPLOAD_MODE = "fileapi"`, `EMBED_UPLOAD_MODE = "embed"`.
+| `setClient()` | Construit un `Laminas\Http\Client` effectuant un POST vers `{api_url}/models/{mam_generative_model}:generateContent?key={apiKey}`. La clé d'API est un **paramètre de requête URL** (pas un en-tête). Délai long. |
+| `getMessageKey()` | Renvoie `'contents'`. |
+| `addToolsToPayload()` | Récupère les outils via `getAgentFunctions()`, assainit chacun, renomme `input_schema` → `parameters`, et les enveloppe comme `tools:[{functionDeclarations:[…]}]` avec `toolConfig.functionCallingConfig.mode='AUTO'`. Utilise en repli un outil `url_context` lorsqu'aucune fonction n'est présente. |
+| `constructContent()` / `addContentToPayload()` | Mappe le rôle `assistant` → `model` ; construit des tableaux `parts` contenant `{text}`, `{fileData:{fileUri,mimeType}}` (File API), ou `{inlineData:{mimeType,data}}` (base64). |
+| `sendCustomAI()` | Envoie le payload JSON (réessaie sur 5xx / 429) ; analyse `candidates[].content.parts[]` pour les entrées texte et `functionCall` ; dispatche chaque appel d'outil (MCP ou intégré) ; ajoute les résultats sous forme de `{functionResponse:{name,response:{result}}}` et boucle jusqu'à ce qu'il n'y ait plus d'appels d'outils, qu'une `finishReason` soit atteinte, ou que le plafond de sécurité soit atteint. |
+| `processFiles()` / `processContextFiles()` | Gère les téléversements de fichiers selon `mam_file_upload_mode` (voir [Modes de téléversement](#modes-de-téléversement-des-fichiers)) ; stocke également une copie via `uploadDocument()` pour l'affichage en session. |
+| `setPromptTokenCount()` / `setResponseTokenCount()` / `setTotalTokenCount()` | Lisent `usageMetadata.promptTokenCount`, `candidatesTokenCount`, `totalTokenCount`. |
+| `getAllowedMimetypes()` | Renvoie les types MIME autorisés depuis le bloc de configuration Gemini. |
 
 ## Modes de téléversement des fichiers
 
-Le `mam_file_upload_mode` du modèle actif détermine comment les fichiers parviennent à Gemini :
+Le `mam_file_upload_mode` du modèle contrôle comment les fichiers parviennent à Gemini :
 
-- **`fileapi`** — téléverse via la **File API** Gemini (`upload_url`), puis référence le `fileUri`
-  renvoyé. Le service attend que l'état du fichier passe à `ACTIVE`.
-- **`embed`** — envoie les octets du fichier en base64 inline (`inlineData`), avec extraction de
-  texte pour les `.docx` et `.xlsx`.
-
-Quand `mam_internal_upload` est activé, les fichiers texte passent par **MelisDocumentUpload** (afin
-de pouvoir être réaffichés dans les sessions de discussion antérieures), et seuls les fichiers non
-texte vont vers la File API / l'embed.
+- **`fileapi`** (par défaut) — téléverse vers la **File API** Gemini via un POST multipart, puis
+  interroge l'état jusqu'à ce qu'il passe à `ACTIVE`, et référence le `fileApiUri` renvoyé.
+- **`embed`** — envoie les octets du fichier inline en base64 (`inlineData`), avec extraction de
+  texte pour les formats pris en charge.
 
 ## Configuration
 
-Les points d'accès et limites Gemini se trouvent sous la clé de configuration
-`plugins → melisaiengine → datas → AI → Gemini` (voir `config/app.interface.php`) :
+La configuration se trouve sous `config['plugins']['melisaiengine']['datas']['AI']['Gemini']` :
 
-| Clé | Valeur par défaut |
+| Clé | Présentation |
 | --- | --- |
-| `api_url` | `https://generativelanguage.googleapis.com/v1beta` |
-| `upload_url` | `https://generativelanguage.googleapis.com/upload/v1beta/files` |
-| `allowed_mimetypes` | Liste MIME image / pdf / texte / office / vidéo / audio / zip |
+| `api_url` | URL de base pour les requêtes `generateContent`. |
+| `upload_url` | Point d'accès de téléversement de la File API Gemini. |
+| `allowed_mimetypes` | Types MIME acceptés (renvoyés par `getAllowedMimetypes()`). |
 
-La clé d'API n'est **pas** stockée dans la configuration — elle provient de la ligne du modèle
-(`mapk_keys`), gérée dans le backoffice IA.
+La clé d'API provient de l'enregistrement de clé de plateforme du modèle (`mapk_*`), géré dans
+le back-office IA. Elle n'est pas stockée dans les fichiers de configuration et n'a pas de
+variable d'environnement de repli.
 
-## Backoffice
+::: warning Clé d'API dans l'URL
+La clé d'API Google est ajoutée en paramètre de requête (`?key=…`). Les journaux de requêtes et
+les proxies HTTP peuvent la capturer — assurez-vous que votre infrastructure limite la rétention
+des journaux en conséquence.
+:::
 
-Aucun en propre. Le module déclare la coquille de plugin `melisaienginegemini` (configuration du
-bundle d'assets) mais ne fournit ni outil, ni action de contrôleur, ni aide de vue, ni plugin de
-tableau de bord. Tous les écrans IA proviennent de `melis-ai` / `melis-ai-engine`.
+## Mapping outil / appel de fonction
 
-## Tables de base de données
+Gemini utilise `parameters` là où le contrat du moteur utilise `input_schema` ; `addToolsToPayload()`
+effectue ce renommage avant l'envoi. Les appels d'outils arrivent sous la forme `{functionCall:{name,args}}`
+**sans id** (positionnels, contrairement au `tool_use_id` de Claude). Le service achemine par `name` via
+`MelisAIEngineMcpService::isMcpTool()` et renvoie
+`{functionResponse:{name,response:{result:…}}}`.
 
-Le module ne possède aucune table ; il peuple celles de `melis-ai-engine` via `dbdeploy` :
+## Différences avec le fournisseur Claude
 
-| Table | Ce que ce module insère |
-| --- | --- |
-| `melis_ai_companies` | La ligne de société `Google`. |
-| `melis_ai_models` | Les modèles Gemini (p. ex. `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-2.5-flash-lite`, `gemini-3.1-pro-preview`) avec leur `mam_generative_model`, mode d'upload et indicateurs de fichier. |
+| Aspect | Gemini | Claude |
+| --- | --- | --- |
+| Clé de message | `contents` | `messages` |
+| Libellé du rôle assistant | `model` | `assistant` |
+| Clé du schéma d'outil | `parameters` | `input_schema` |
+| Id d'appel d'outil | aucun (positionnel) | `tool_use_id` |
+| Méthode d'authentification | Paramètre de requête URL `?key=` | En-tête `x-api-key` |
+| Mode fichier par défaut | `fileapi` | `embed` |
 
 ## Fichiers clés
 
-| Sujet | Chemin |
+| Élément | Chemin |
 | --- | --- |
 | Service fournisseur | `vendor/melisplatform/melis-ai-engine-gemini/src/Service/MelisAIEngineModelGeminiService.php` |
-| Fabrique de service | `vendor/melisplatform/melis-ai-engine-gemini/src/Service/Factory/MelisAIEngineModelGeminiServiceFactory.php` |
-| Alias de service / routage | `vendor/melisplatform/melis-ai-engine-gemini/config/module.config.php` |
-| Points d'accès et types MIME autorisés | `vendor/melisplatform/melis-ai-engine-gemini/config/app.interface.php` |
-| dbdeploy (société + modèles) | `vendor/melisplatform/melis-ai-engine-gemini/install/dbdeploy/` |
-| Amorçage du module | `vendor/melisplatform/melis-ai-engine-gemini/src/Module.php` |
 
 ## Voir aussi
 
-- [Melis AI](/fr/guide/ai) — agents, instances, scénarios.
-- [MCP et outils](/fr/guide/mcp) — appel de fonctions/d'outils.
-- [Référence des modules](/fr/reference/modules) — la carte complète des modules.
+- [MelisAIEngine](/fr/reference/modules/melis-ai-engine) — le contrat abstrait et le runtime partagé.
+- [MelisAIEngineClaude](/fr/reference/modules/melis-ai-engine-claude) — le fournisseur Anthropic.
+- [MelisAI](/fr/reference/modules/melis-ai) — back-office pour les agents, instances et modèles.

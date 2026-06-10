@@ -1,120 +1,184 @@
 # MelisMarketPlace
 
-> Place de marché intégrée au backoffice pour découvrir, télécharger, mettre à jour et installer des
-> modules Melis Platform.
-> Paquet : `melisplatform/melis-marketplace`.
+> Place de marché intégrée au back-office pour découvrir, télécharger, mettre à jour, supprimer et installer des modules Melis Platform.
+> Paquet `melisplatform/melis-marketplace`.
 
-## Objectif
+## Présentation
 
-MelisMarketPlace ajoute un outil **Market Place** dans le backoffice qui liste tous les paquets
-Melis Platform publiés sur Packagist avec `"type": "melisplatform-module"`. Depuis cet outil, un
-administrateur peut télécharger un nouveau module, mettre à jour un module installé (la version
-locale est comparée à celle du dépôt), le supprimer, et exécuter l'éventuelle configuration
-post-installation fournie par le module. Une icône d'en-tête signale les mises à jour disponibles.
-C'est un module **core** qui ne dépend que de `melis-core`.
+MelisMarketPlace est la boutique de modules du back-office : elle liste tous les paquets publiés sur le
+serveur Melis Packagist, compare chaque version installée à la dernière version publiée, et permet à un
+administrateur de télécharger, mettre à jour ou supprimer des modules — et d'installer des produits sites
+complets — sans quitter le back-office. Elle appelle `MelisComposerService` (melis-composerdeploy) pour
+les opérations Composer et lit/bascule l'état des modules via `MelisAssetManagerModulesService`
+(melis-asset-manager).
+
+Six modules fondamentaux — **MelisCore, MelisEngine, MelisFront, MelisAssetManager,
+MelisComposerDeploy, MelisDbDeploy** — sont listés comme exceptions et ne sont jamais proposés au
+téléchargement, à la mise à jour ou à la suppression depuis la boutique.
 
 ## Activation
 
-C'est un module Laminas standard. Ajoutez-le à `config/melis.module.load.php` :
+Ajoutez à `config/melis.module.load.php` :
 
 ```php
 return [
-    // …
     'MelisMarketPlace',
 ];
 ```
 
-Installation via Composer (`composer require melisplatform/melis-marketplace`) ; `melis-core` est
-récupéré automatiquement. Voir [Référence des modules](/fr/reference/modules).
+Nécessite `melisplatform/melis-core: ^5.1` et PHP `^8.1|^8.3`. Le module enregistre un flag
+`dbdeploy: true` afin que tout delta de base de données livré soit appliqué au premier chargement.
 
-La place de marché dialogue avec un miroir Packagist distant ; l'URL est configurée dans
-`config/app.interface.php` sous `melismarketplace_toolstree_section/datas/melis_packagist_server`
-(par défaut `http://marketplace.melisplatform.com/melis-packagist`). Le même bloc `datas` contient
-une liste `exceptions` (`MelisCore`, `MelisEngine`, `MelisFront`, `MelisAssetManager`,
-`MelisComposerDeploy`, `MelisDbDeploy`) — les modules core qui ne sont jamais proposés à la
-suppression ou à la mise à jour.
+L'endpoint Packagist distant est configuré dans `config/app.interface.php` sous
+`melismarketplace_toolstree_section/datas/melis_packagist_server`
+(par défaut `http://marketplace.melisplatform.com/melis-packagist`).
 
-## Services clés
-
-Les deux services sont enregistrés dans `config/module.config.php` via `AbstractFactory` et aliasés.
+## Services principaux
 
 | Alias de service | Rôle |
 | --- | --- |
-| `MelisMarketPlaceService` | Pilote l'installation et la mise à jour des modules : charge/active un module (`plugModule()` / `unplugModule()` encapsulent `MelisAssetManagerModulesService`), compare les versions (`compareLocalVersionFromRepo()` → à jour / à mettre à jour / en avance / dev) et dispatche le formulaire de configuration optionnel d'un module (`getForm()`, `validateForm()`, `submitForm()`, `hasPostSetup()`). |
-| `MelisMarketPlaceSiteService` | Gère l'installation d'un module **site** complet depuis la place de marché (`installSite()`, `marketplaceInstallSite()`, `invokeSetup()`, `getModule()` / `setModule()`). |
+| `MelisMarketPlaceService` | Comparaison de versions, activation/désactivation de modules, et dispatch du formulaire de configuration post-installation par module. |
+| `MelisMarketPlaceSiteService` | Crée un site web complet à partir d'un paquet `melisplatform-site`. |
 
-Les constantes de statut de version sont définies dans `MelisMarketPlace\Support\MelisMarketPlace`
-(`UP_TO_DATE`, `NEED_UPDATE`, `IN_ADVANCE`, `DEV`, ainsi que les clés d'action `DOWNLOAD` /
-`UPDATE` / `FORM`).
+### `MelisMarketPlaceService`
 
-## Backoffice
+Étend `MelisGeneralService`.
 
-L'outil est enregistré sous la section du menu de gauche `melismarketplace_toolstree_section`
-(`config/app.interface.php`) avec une icône de panier, ainsi qu'une icône d'en-tête
-(`market_place_header_icon`) qui fait remonter les mises à jour disponibles.
+```php
+$mp = $serviceManager->get('MelisMarketPlaceService');
 
-Toutes les actions se trouvent sur `MelisMarketPlace\Controller\MelisMarketPlaceController`
-(clé de contrôleur `MelisMarketPlace\Controller\MelisMarketPlace`) :
+// Compare la version installée à la dernière — retourne l'une des constantes ci-dessous.
+$status = $mp->compareLocalVersionFromRepo('MelisCmsSlider', 'v5.1.3');
+// MelisMarketPlaceService::NEED_UPDATE  (-1)
+// MelisMarketPlaceService::UP_TO_DATE   (1)
+// MelisMarketPlaceService::IN_ADVANCE   (2)  — exécute un build dev-…
+
+// Active/désactive un module (réécrit le chargeur de modules actifs via asset-manager).
+$mp->plugModule('MelisCmsSlider');
+$mp->unplugModule('MelisCmsSlider');
+
+// Vérifie si un module embarque un formulaire de configuration post-installation pour une action donnée.
+$needsForm = $mp->hasPostSetup('MyModule', MelisMarketPlaceService::ACTION_DOWNLOAD);
+```
+
+`compareLocalVersionFromRepo()` déclenche la paire d'événements
+`melismarketplace_compare_local_version_from_repo_start` / `…_end` afin que des listeners puissent
+remplacer le statut calculé.
+
+**Convention de configuration post-installation par module.** Un module peut embarquer un
+`MelisSetupPostDownloadController` et/ou un `MelisSetupPostUpdateController` dans son propre espace de
+noms `Controller\`, exposant `$showOnMarketplacePostSetup = true` et les actions `getFormAction`,
+`validateFormAction`, `submitAction`. MarketPlace y délègue pour afficher et traiter le formulaire de
+configuration dans une modale :
+
+```php
+$mp->getForm('MyModule');               // affiche MyModule\Controller\MelisSetupPostDownload::getFormAction
+$mp->validateForm('MyModule', $post);   // → validateFormAction, retourne les variables du JsonModel
+$mp->submitForm('MyModule', $post);     // → submitAction
+```
+
+### `MelisMarketPlaceSiteService`
+
+Étend `MelisGeneralService`. Crée un site web complet à partir d'un paquet `melisplatform-site` :
+crée les lignes `melis_cms_site` / accueil / langues, alloue de nouveaux intervalles d'identifiants de
+page, de plateforme et de template, et crée les tables CMS du module via
+`Support\MelisMarketPlaceCmsTables` / `Support\MelisMarketPlaceSiteInstall`.
+
+```php
+$site = $serviceManager->get('MelisMarketPlaceSiteService');
+$site->marketplaceInstallSite($request);   // lit le POST : name, scheme, domain, module, action
+```
+
+Exceptions typées (dans `src/Exception/`) : `EmptySiteException`,
+`PlatformIdMaxRangeReachedException`, `TemplateIdMaxRangeReachedException`,
+`ArrayKeyNotFoundException`, `FileNotFoundException`.
+
+## Back-office
+
+Enregistré sous la section du menu de gauche `melismarketplace_toolstree_section` (icône de panier,
+label `tr_market_place`) et une icône d'en-tête `market_place_header_icon` affichant le nombre de
+modules nécessitant une mise à jour.
 
 | melisKey / action | Rôle |
 | --- | --- |
-| `melis_market_place_tool_display` → `tool-container` | Outil principal ; liste les paquets (`fetchPackages()`). |
+| `melis_market_place_tool_display` → `tool-container` | Page d'accueil de la boutique ; le JS appelle `fetchPackages()` à l'ouverture. |
 | `melis_market_place_tool_package_display` → `tool-container-product-view` | Vue détaillée d'un paquet. |
-| `tool-product-modal-container` / `tool-product-modal-content` | Modale de confirmation de téléchargement/mise à jour. |
-| `tool-module-form-setup-content` | Affiche le formulaire de configuration post-installation d'un module. |
-| `market-place-module-header` | Liste déroulante d'en-tête des modules à mettre à jour. |
+| `melis_market_place_tool_package_modal_container` | Modale de confirmation de téléchargement/mise à jour/suppression. |
+| `melis_market_place_module_setup_form_content` | Formulaire de configuration post-téléchargement/mise à jour par module dans une modale. |
+| `market_place_header_conf` → `market-place-module-header` | Liste déroulante d'en-tête des modules nécessitant une mise à jour. |
 
-Actions notables du contrôleur : `moduleListAction()`, `bundleListAction()`,
-`melisMarketPlaceProductDoAction()` (effectue le téléchargement/la mise à jour),
-`activateModuleAction()` / `plugModuleAction()` / `unplugModuleAction()`,
-`execDbDeployAction()`, `executeComposerScriptsAction()`, `reDumpAutoloadAction()`,
-`getModuleTablesAction()` / `exportTablesAction()`, et `isMarketplaceAccessibleAction()`.
-Un flux de configuration autonome se trouve sur `MelisSetupController`
-(route `/MelisMarketPlace/setup`).
+L'interface du catalogue est pilotée par axios et le carrousel slick ; `app.tools.php` est
+intentionnellement vide — MarketPlace n'est pas un outil DataTable.
 
-## Front office
+**Contrôle d'accès.** Deux vérifications conditionnent l'utilisation de la boutique
+(toutes deux dans `MelisMarketPlaceController`) :
 
-Ce module ne fournit aucun plugin de templating ni view helper front-office — c'est un outil
-exclusivement backoffice.
+- `isMarketplaceAccessible()` — indique si le serveur Packagist est joignable et si la fonctionnalité
+  est activée.
+- `allowUpdate()` — lit `melis_core_platform.plf_update_marketplace` pour la plateforme courante
+  (variable d'environnement `MELIS_PLATFORM`) ; une plateforme avec `plf_update_marketplace = 0` peut
+  consulter la boutique mais pas télécharger ni mettre à jour.
+
+**Flux téléchargement / mise à jour / suppression.** `melisMarketPlaceProductDoAction()` est le point
+d'entrée unique pour les actions du catalogue. Il déclenche `melis_marketplace_product_do_start`,
+bascule sur l'action (`MelisComposerService::DOWNLOAD / UPDATE / REMOVE`), puis déclenche
+`melis_marketplace_product_do_finish` pour piloter les retours flash-messenger. Avant une suppression,
+le contrôleur parcourt les dépendances du module cible, celles de tous les autres modules actifs, ainsi
+que le bloc `require` du `composer.json` racine du projet, afin d'éviter la suppression d'une
+dépendance partagée.
+
+Référence complète des actions du contrôleur :
+
+```
+toolContainer / toolContainerProductView      → vues d'accueil & de produit unique
+moduleList / bundleList                        → listes des modules et bundles installés
+marketPlaceModuleHeader                        → badge de mises à jour dans l'en-tête
+melisMarketPlaceProductDo                      → point d'entrée DOWNLOAD / UPDATE / REMOVE
+execDbDeploy / reDumpAutoload / executeComposerScripts → étapes de déploiement post-téléchargement
+plugModule / unplugModule / isModuleActive / activateModule → activer/désactiver les modules installés
+getSetupModuleForm / validateSetupForm / submitSetupForm   → formulaire de configuration post-installation
+getModuleTables / exportTables                 → inspecter/exporter les tables CMS d'un module
+isPackageDirectoryRemovable / changePackageDirectoryPermission → vérifications système avant suppression
+isModuleExists / isMarketplaceAccessible       → gardes AJAX
+siteInstall                                    → installer un produit site
+```
+
+`MelisSetupController` gère la route autonome `/MelisMarketPlace/setup` (configuration par module
+en dehors de l'arborescence d'interface du back-office).
+
+## Événements
+
+| Événement | Déclenché par | Objectif |
+| --- | --- | --- |
+| `melismarketplace_compare_local_version_from_repo_start` / `_end` | `compareLocalVersionFromRepo` | Intercepter ou remplacer le résultat du statut de version calculé. |
+| `melis_marketplace_product_do_start` | `melisMarketPlaceProductDo` | Avant une action de téléchargement, mise à jour ou suppression. |
+| `melis_marketplace_product_do_finish` | `melisMarketPlaceProductDo` | Après l'action — pilote les retours flash-messenger. |
 
 ## Tables de base de données
 
-MelisMarketPlace ne définit **aucune table propre** (aucun SQL d'installation ni delta dbdeploy
-n'est livré avec lui). Il opère sur la configuration des modules existante de la plateforme et sur
-l'installation Composer. Lorsqu'un module qu'il installe fournit des deltas de base de données,
-ceux-ci sont appliqués via `melis-dbdeploy` (`execDbDeployAction()`) ; les installations de site
-réutilisent les tables CMS de la plateforme.
-
-## Exemple
-
-Vérifier si un module installé est à jour par rapport au dépôt de la place de marché :
-
-```php
-/** @var \MelisMarketPlace\Service\MelisMarketPlaceService $mp */
-$mp = $serviceManager->get('MelisMarketPlaceService');
-
-// $latestVersion provient de la liste de la place de marché pour le paquet
-$status = $mp->compareLocalVersionFromRepo('MelisCmsNews', $latestVersion);
-// $status est l'une des constantes MelisMarketPlace\Support\MelisMarketPlace :
-// UP_TO_DATE, NEED_UPDATE, IN_ADVANCE
-```
+MelisMarketPlace ne définit aucune table propre. Lorsqu'un module téléchargé embarque des deltas de
+base de données, ceux-ci sont appliqués via `execDbDeployAction()` (melis-dbdeploy). Les installations
+de produits sites écrivent dans les tables CMS existantes de la plateforme (allouées via
+`MelisMarketPlaceSiteService`).
 
 ## Fichiers clés
 
-| Sujet | Chemin |
+| Élément | Chemin |
 | --- | --- |
 | Manifeste du module | `vendor/melisplatform/melis-marketplace/composer.json` |
 | Routes / services / contrôleurs | `vendor/melisplatform/melis-marketplace/config/module.config.php` |
-| Arbre d'outils & icône d'en-tête | `vendor/melisplatform/melis-marketplace/config/app.interface.php` |
-| Service d'installation/mise à jour | `vendor/melisplatform/melis-marketplace/src/Service/MelisMarketPlaceService.php` |
+| Arbre d'outils, icône d'en-tête, config Packagist | `vendor/melisplatform/melis-marketplace/config/app.interface.php` |
+| Service d'installation/mise à jour/activation | `vendor/melisplatform/melis-marketplace/src/Service/MelisMarketPlaceService.php` |
 | Service d'installation de site | `vendor/melisplatform/melis-marketplace/src/Service/MelisMarketPlaceSiteService.php` |
 | Contrôleur principal | `vendor/melisplatform/melis-marketplace/src/Controller/MelisMarketPlaceController.php` |
 | Contrôleur de configuration autonome | `vendor/melisplatform/melis-marketplace/src/Controller/MelisSetupController.php` |
-| Constantes | `vendor/melisplatform/melis-marketplace/src/Support/MelisMarketPlace.php` |
-| Vues | `vendor/melisplatform/melis-marketplace/view/melis-market-place/` |
-| Assets | `vendor/melisplatform/melis-marketplace/public/` |
+| Support tables CMS | `vendor/melisplatform/melis-marketplace/src/Support/MelisMarketPlaceCmsTables.php` |
+| Support installation site | `vendor/melisplatform/melis-marketplace/src/Support/MelisMarketPlaceSiteInstall.php` |
+| Exceptions | `vendor/melisplatform/melis-marketplace/src/Exception/` |
+| Vues | `vendor/melisplatform/melis-marketplace/view/` |
+| Assets (slick, axios, bundle JS) | `vendor/melisplatform/melis-marketplace/public/` |
 
-::: tip Voir aussi
-Pour le déploiement piloté par Composer sous-jacent, voir `melis-composerdeploy`
-(`MelisComposerService`) et le mécanisme de deltas versionnés de `melis-dbdeploy`.
-:::
+Voir aussi : [melis-composerdeploy](/fr/reference/modules/melis-composerdeploy) ·
+[melis-asset-manager](/fr/reference/modules/melis-asset-manager) ·
+[melis-dbdeploy](/fr/reference/modules/melis-dbdeploy) ·
+[melis-core](/fr/reference/modules/melis-core)

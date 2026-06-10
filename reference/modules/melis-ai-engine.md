@@ -1,128 +1,156 @@
 # MelisAIEngine
 
-> The core AI engine — agents, instances, scenarios, models and the MCP/tool layer. Package
-> `melisplatform/melis-ai-engine`.
+> The abstract AI engine — provider contract, agent/scenario runtime, conversation store, MCP/tool bridge, and all AI database tables. Package `melisplatform/melis-ai-engine`.
 
 ## Purpose
 
-MelisAIEngine is the provider-agnostic runtime that powers Melis AI. It defines the abstract
-model contract (`MelisAIEngineModelService`) that provider modules (Claude, Gemini…) implement,
-runs **agents** through their **scenario steps**, builds the payload from conversation context and
-uploaded files, manages **tool/function** declarations (including MCP servers), tracks token usage,
-and exposes the chat view helpers used in the backoffice. It is the engine layer; the
-backoffice UI lives in the companion module `melis-ai`. See the [AI guide](/guide/ai) and the
-[MCP guide](/guide/mcp).
+MelisAIEngine is the keystone of the MelisAI suite. It defines the abstract provider contract (`MelisAIEngineModelService`) that Claude and Gemini implement, runs agents through multi-step scenario workflows, manages the MCP/tool-calling bridge, and owns all `melis_ai_*` database tables. The backoffice UI lives in the companion module `MelisAI`; this module is the service and data layer only.
 
 ## Enable it
 
-A standard Laminas module. Add it to `config/melis.module.load.php`:
+Add to `config/melis.module.load.php`:
 
 ```php
-'MelisAIEngine',
+return [
+    'MelisAIEngine',
+];
 ```
 
-It is typically loaded alongside `MelisAIEngineClaude` / `MelisAIEngineGemini` (providers) and
-`MelisAI` (backoffice). Composer dependencies: `melisplatform/melis-core` and
-`melisplatform/melis-document-upload` (for document ingestion). At least one provider module must be
-installed for real model calls.
+Required Composer dependencies: `melisplatform/melis-core ^5.3` and `melisplatform/melis-document-upload ^5.3`. At least one provider module (`MelisAIEngineClaude` or `MelisAIEngineGemini`) must be installed for real model calls.
 
 ## Key services
 
 | Service alias | Role |
 | --- | --- |
-| `MelisAIEngineService` | Core data access for the engine: `getActiveInstance()`, `getActiveAgent()`, `getActiveModel()`, `getActiveModelClass()`, `getEntryParams()` / `getExitParams()`, `getDefaultModel()`, `getActiveAITools()`, `saveDailyUsage()`. |
-| `MelisAIEngineModelService` | Abstract base contract for provider adapters. Concrete `send()`, `getAgentFunctions()`, token getters, document extraction (`extractTextFromDocx()`, `extractTextFromXlsx()`); abstract `setClient()`, `addToolsToPayload()`, `addContentToPayload()`, `sendCustomAI()`, `getAllowedMimetypes()`, `processFiles()`, `processContextFiles()`. |
-| `MelisAIEngineFunctionService` | Built-in (non-MCP) tool/function implementations, e.g. `get_table_structure()`, `create_database_table()`, `add_database_table_fields()`, `activate_module()`, `save_file()`. |
-| `MelisAIEngineMcpService` | MCP client: server management, tool discovery, schema handling, communication and circuit-breaker logic (composed from the `Service/Traits/Mcp/*` traits). Built via factory. |
-| `MelisAIEngineFileService` | File lifecycle for AI uploads, e.g. `deleteAIDocUploads()`. |
-| `MelisAIEngineGeneralService` | Event-aware helpers: `sendEvent()`, `makeArrayFromParameters()`, `getRenderMode()`. |
-| `MelisAIEngineConversationStore` | Persists conversation state (`get()`, `set()`, `has()`, `delete()`) in `melis_ai_conversation_state`. Built via factory. |
-| `MelisAIEngine\Service\MelisAIEngineAgentService` | Per-run agent orchestration (factory-built with an agent id + instance id): `runAgent()`, `continueConversation()`, `validateAnswer()`, `validateResult()`, session context/historic/answer accessors, `restartAgent()`, `clearSession()`. |
+| `MelisAIEngineModelService` | Abstract provider contract. Subclass this to add a new AI provider (§ Provider contract). |
+| `MelisAIEngineService` | Registry/factory: `getActiveInstance()`, `getActiveAgent()`, `getActiveModel()`, `getActiveModelClass()` (provider selection), `getActiveAITools()`, `saveDailyUsage()`. |
+| `MelisAIEngineAgentService` | Scenario runtime: `runAgent($postValues, $files)` walks the agent's steps and drives `MelisAIEngineModelService::send()`. |
+| `MelisAIEngineMcpService` | MCP/tool-calling bridge: server management, JSON-RPC communication, circuit breaker, `getAvailableTools()`, `isMcpTool()`, `invokeTool()`, `formatToolsForAI()`, `getToolSchema()`. |
+| `MelisAIEngineConversationStore` | Persistent multi-turn conversation state in `melis_ai_conversation_state`: `get()`, `has()`, `set()`, `delete()`. Auto-GC after 48 hours. |
+| `MelisAIEngineFunctionService` | Built-in (non-MCP) tool implementations, e.g. `get_table_structure`, `create_database_table`. |
+| `MelisAIEngineFileService` | Retention cleanup of AI-uploaded documents: `deleteAIDocUploads()`. |
+| `MelisAIEngineGeneralService` | Event-aware base: `sendEvent()`, `makeArrayFromParameters()`. |
 
-The `*Table` aliases (`MelisAIEngineAgentTable`, `MelisAIEngineInstanceTable`, `MelisAIEngineModelTable`,
-`MelisAIEngineToolTable`, `MelisAIEngineAgentToolTable`, `MelisAIEngineScenarioStepTable`, …) expose the
-underlying tables for the services above.
+## Provider contract
 
-## Backoffice
+`MelisAIEngineModelService` (`src/Service/MelisAIEngineModelService.php`) is the abstract class every provider must extend. Constructor: `(ServiceManager $serviceManager, int $modelId, int $agentId)`.
 
-The engine ships no tool-tree entry of its own (`app.tools.php` and `app.toolstree.php` are empty —
-the UI is provided by `melis-ai`). It contributes:
+**Abstract methods a provider must implement:**
 
-- Controller `MelisAIEngine\Controller\AI` (`AIController`), routed under `MelisAIEngine`, with the
-  AJAX actions that drive a chat session: `runAgentAction`, `validateAnswerAction`,
-  `continueConversationAction`, `restartAgentAction`, `closeAgentAction`, plus the modal renderers
-  `renderErrorModalAction` and `renderMessageModalAction`.
-- Two interface modals declared in `app.interface.php`: melisKeys `melisaiengine_error_modal` and
-  `melisaiengine_message_modal`.
+```php
+abstract public function setClient();
+abstract public function addToolsToPayload($payload);
+abstract public function addContentToPayload($payload, $role, $prompt, $files=[], $content=[]);
+abstract public function constructContent($role, $prompt, $files=[]);
+abstract public function getMessageKey(): string;            // 'messages' (Claude) | 'contents' (Gemini)
+abstract public function sendCustomAI(?array $payload = []): array;
+abstract public function getAllowedMimetypes(): array;
+abstract public function setPromptTokenCount($responseData);
+abstract public function setResponseTokenCount($responseData);
+abstract public function setTotalTokenCount($responseData);
+abstract public function processFiles($filesArr): array;
+abstract public function processContextFiles($filesArr): array;
+```
 
-## Front office
+The base `send(array $contextArr): array` lifecycle is fixed: `addToolsToPayload()` → `addContentToPayload()` per context entry → `sendCustomAI()` → token counts → returns `['request','responseData','result','errors','needs_continuation','session_id','continuation_context','tool_results']`.
 
-The chat experience is exposed as **view helpers** (not drag-drop templating plugins), usable in any
-`.phtml`:
+**Helpers provided by the base class:** `getModel()`, `getAgentFunctions()`, `getToolDeclarationByName()`, token getters, `uploadDocument()`, `extractTextFromDocx()`, `extractTextFromXlsx()`, `getMimeType()`.
 
-| View helper alias | Role |
-| --- | --- |
-| `AIChatViewHelper` | Renders a full chat box bound to an instance/agent. `__invoke($maiInstanceId, ?int $agentId = null, $extraEntryParams = [], $debugMode = false, $exitParamArr = [], $showCloseButton = true, $needExitParam = true, $showHideButton = false, $clearSession = true, $renderMode = 'melis')`. |
-| `AIChatFormBoxViewHelper` | Renders the chat input/form box. `__invoke($agentId, $withLabel = true)`. |
-| `AIChatHistoricViewHelper` | Renders the conversation history. `__invoke($debugMode = false)`. |
-| `AIChatHistoricDebugViewHelper` | Renders the debug history view. |
-| `AIUserInputViewHelper` | Builds a Laminas form element for a user-input step. `__invoke($fieldType, $label, $fieldName = 'user_input')`. |
+## Provider selection
 
-The agent **scenario steps** are implemented as controller plugins, registered under
-`controller_plugins` and named `MelisAIAgentStepType*Plugin` (e.g. `MelisAIAgentStepTypeAIChatPlugin`,
-`MelisAIAgentStepTypeUserInputPlugin`, `MelisAIAgentStepTypeCodePhpPlugin`,
-`MelisAIAgentStepTypeCodeBuiltInPlugin`, `MelisAIAgentStepTypeAIContextPlugin`,
-`MelisAIAgentStepTypeEntryParamsPlugin`, `MelisAIAgentStepTypeExitParamsPlugin`,
-`MelisAIAgentStepTypeCodeAICallPlugin`). Two extra plugins back the built-in code steps:
-`MelisAIEngineBuiltInConnectedUser` and `MelisAIEngineBuiltInGetString`.
+`MelisAIEngineService::getActiveModelClass($company, $modelId, $agentId)` picks the provider by the model's company name:
+
+```php
+if (strpos($company, 'Google') !== false) {
+    // builds MelisAIEngineModelGeminiService — requires MelisAIEngineGemini module
+} elseif (strpos($company, 'Anthropic') !== false) {
+    // builds MelisAIEngineModelClaudeService — requires MelisAIEngineClaude module
+}
+```
+
+To add a new provider (e.g. OpenAI): extend `MelisAIEngineModelService`, implement the abstract methods, register as a service, and add a branch here keyed on the company name.
+
+## MCP / tool-calling system
+
+Tools are declared in two places: `config['plugins']['melisaiengine']['datas']['function_declarations']` (name, description, JSON schema, `mcp` boolean) and the `melis_ai_tools` table. An agent opts into tools via `maa_agent_tools`.
+
+At call time: `getAgentFunctions()` returns allowed declarations → `addToolsToPayload()` injects them → on a tool call the provider routes via `MelisAIEngineMcpService::isMcpTool($name)`: MCP tools go to `invokeTool()` (JSON-RPC over stdio, circuit-breaker guarded); built-in tools go to `MelisAIEngineFunctionService`. Results are fed back and the conversation continues until the model signals completion or a safety cap.
+
+MCP servers are configured under `config['mcp']['servers'][<name>]` = `{enabled, command, args, tools, timeout}`; `MelisAIEngineMcpService` launches them via `proc_open` and speaks JSON-RPC 2.0 (`tools/list`, tool invocation).
 
 ## Database tables
 
-Created by `install/dbdeploy/` (the module sets `extra.dbdeploy: true`):
+All `melis_ai_*` tables are owned by this module (`dbdeploy: true`):
 
 | Table | Holds |
 | --- | --- |
-| `melis_ai_companies` | AI providers/companies. |
-| `melis_ai_models` | Provider models. |
-| `melis_ai_agents` | Agents (incl. `maa_agent_tools`, file-context settings). |
-| `melis_ai_instances` / `melis_ai_instance_trans` | Agent instances and their translations. |
-| `melis_ai_scenario_steps` / `melis_ai_scenario_steps_datas` / `melis_ai_scenario_steps_datas_entryexit` | Scenario steps, their data, and entry/exit params. |
-| `melis_ai_return_types` | Step return-type reference data. |
-| `melis_ai_tools` / `melis_ai_agents_tools` | Tool catalogue and the agent↔tool assignment. |
-| `melis_ai_platform_keys` | Per-platform API keys/credentials. |
-| `melis_ai_daily_usage` | Token/usage accounting per agent. |
-| `melis_ai_files` | Uploaded AI documents/context files. |
-| `melis_ai_conversation_state` | Persisted multi-turn conversation state. |
-
-(The `MelisAIEnginePlatformTable` alias reads the core `melis_core_platform` table.)
+| `melis_ai_models` | Provider models (company, `mam_generative_model`, API key link). |
+| `melis_ai_companies` | AI companies (Google, Anthropic…). |
+| `melis_ai_platform_keys` | API keys per platform. |
+| `melis_ai_agents` | Agents (`maa_name`, model link, `maa_agent_tools` JSON, file toggles). |
+| `melis_ai_agents_tools` | Agent ↔ tool assignment. |
+| `melis_ai_tools` | Tool catalogue (`mat_name`, `mat_desc`, `mat_config` JSON). |
+| `melis_ai_instances` / `melis_ai_instance_trans` | Named deployments (instances) and translations. |
+| `melis_ai_scenario_steps` / `…_datas` / `…_datas_entryexit` | Scenario steps, their data, and entry/exit params. |
+| `melis_ai_return_types` | Step return-type definitions. |
+| `melis_ai_files` | Files attached to steps/context. |
+| `melis_ai_daily_usage` | Per model/agent/instance/day token and call counts. |
+| `melis_ai_conversation_state` | Persistent conversation state (`macs_key`, JSON, auto-GC). |
 
 ## Example
 
-Drop a chat box for an existing AI instance into a backoffice view:
+Render a chat box bound to an existing AI instance from any `.phtml` view:
 
 ```php
-// in a .phtml view
-echo $this->AIChatViewHelper($maiInstanceId, $agentId);
+// Render the chat box for a named instance
+echo $this->AIChatViewHelper($maiInstanceId);
 ```
 
-Add a custom non-MCP function for agents to call by extending `MelisAIEngineFunctionService` and
-declaring the function under `plugins -> melisaiengine -> datas -> function_declarations`, then assign
-it to an agent via **Melis AI > AI Agents > [Agent] > AI Tools**. See
-[Create a tool](/guide/create-a-tool) and the [MCP guide](/guide/mcp).
+Register a custom MCP server and declare its tools so an agent can call them:
+
+```php
+// In a module's config — register the MCP server
+'mcp' => [
+    'servers' => [
+        'my-mcp-server' => [
+            'enabled' => true,
+            'command' => 'node',
+            'args'    => ['/path/to/server.js'],
+            'tools'   => ['my_tool'],
+            'timeout' => 30,
+        ],
+    ],
+],
+// Declare the tool with mcp: true
+'plugins' => [
+    'melisaiengine' => [
+        'datas' => [
+            'function_declarations' => [
+                [
+                    'name'        => 'my_tool',
+                    'description' => 'Does something useful',
+                    'mcp'         => true,
+                    // JSON schema for parameters…
+                ],
+            ],
+        ],
+    ],
+],
+```
 
 ## Key files
 
 | Concern | Path |
 | --- | --- |
-| Module config (services, routes, helpers, plugins) | `vendor/melisplatform/melis-ai-engine/config/module.config.php` |
-| Interface modals | `vendor/melisplatform/melis-ai-engine/config/app.interface.php` |
-| Provider contract | `vendor/melisplatform/melis-ai-engine/src/Service/MelisAIEngineModelService.php` |
-| Agent runtime | `vendor/melisplatform/melis-ai-engine/src/Service/MelisAIEngineAgentService.php` |
-| Built-in functions/tools | `vendor/melisplatform/melis-ai-engine/src/Service/MelisAIEngineFunctionService.php` |
-| MCP service + traits | `vendor/melisplatform/melis-ai-engine/src/Service/MelisAIEngineMcpService.php`, `src/Service/Traits/Mcp/` |
+| Provider contract (abstract) | `vendor/melisplatform/melis-ai-engine/src/Service/MelisAIEngineModelService.php` |
+| Registry + provider selection | `vendor/melisplatform/melis-ai-engine/src/Service/MelisAIEngineService.php` |
+| Agent/scenario runtime | `vendor/melisplatform/melis-ai-engine/src/Service/MelisAIEngineAgentService.php` |
+| MCP/tool bridge | `vendor/melisplatform/melis-ai-engine/src/Service/MelisAIEngineMcpService.php` |
+| Persistent conversation store | `vendor/melisplatform/melis-ai-engine/src/Service/MelisAIEngineConversationStore.php` |
+| Built-in functions | `vendor/melisplatform/melis-ai-engine/src/Service/MelisAIEngineFunctionService.php` |
 | Chat controller | `vendor/melisplatform/melis-ai-engine/src/Controller/AIController.php` |
-| View helpers | `vendor/melisplatform/melis-ai-engine/src/View/Helper/` |
-| Step plugins | `vendor/melisplatform/melis-ai-engine/src/Controller/Plugin/` |
-| DB deltas | `vendor/melisplatform/melis-ai-engine/install/dbdeploy/` |
+| Step type plugins | `vendor/melisplatform/melis-ai-engine/src/Controller/Plugin/` |
+| Database table models | `vendor/melisplatform/melis-ai-engine/src/Model/Tables/` |
+| Module config | `vendor/melisplatform/melis-ai-engine/config/module.config.php` |
 
-See also: [Module reference](/reference/modules), [AI guide](/guide/ai), [MCP guide](/guide/mcp).
+See also: [MelisAI](/reference/modules/melis-ai), [MelisAIEngineClaude](/reference/modules/melis-ai-engine-claude), [MelisAIEngineGemini](/reference/modules/melis-ai-engine-gemini), [MelisAIToolCreator](/reference/modules/melis-ai-tool-creator).

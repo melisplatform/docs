@@ -33,7 +33,7 @@ au démarrage de la stack Compose.
 Pour Docker, tout est inclus — passez directement à [l'Option A](#option-a-docker-recommande).
 Pour Composer ou source :
 
-- **PHP 8.1 ou 8.3** avec les extensions : `intl`, `mysqli`, `pdo_mysql`, `gd`
+- **PHP 8.1, 8.3 ou 8.4** avec les extensions : `intl`, `mysqli`, `pdo_mysql`, `gd`
   (freetype/jpeg/webp), `zip`, `curl`, `mbstring`, `exif`, `xml` (et `opcache` recommandé).
 - **MySQL 8** (la stack utilise MySQL 8.4).
 - **Composer 2** et **Git** (pour les chemins Composer et source).

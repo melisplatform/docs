@@ -1,139 +1,145 @@
 # MelisFront
 
-> The front-office engine that displays Melis sites to visitors — routing, rendering, SEO,
-> drag-and-drop zones and the core front view helpers. Package `melisplatform/melis-front`.
+> The front-office rendering system that turns a URL into a finished page and powers the live editable preview. Package `melisplatform/melis-front`.
 
 ## Purpose
 
-MelisFront is the runtime that turns a published Melis page into an HTML response. It matches the
-incoming URL to a page, builds the page layout, runs the templating plugins an editor dropped into
-the page's drag-and-drop zones, and renders the result. It also owns the front-office cross-cutting
-concerns: SEO routing & meta, the sitemap, GDPR banners, asset minification, site translations and
-the `MelisTag` / `MelisDragDropZone` / `MelisMenu` view helpers used inside site templates. It is the
-companion of [melis-cms](/reference/modules/melis-cms) (backoffice editing) and
-[melis-engine](/reference/modules/melis-engine) (page/data services). See the
-[Build a site](/guide/build-a-site) guide for the editor-facing workflow.
+MelisFront is the runtime that resolves a web address to a Melis page, runs the render pipeline (routing, SEO, templating plugins, layout, caching, asset minification) and delivers the HTML response to the visitor. It also powers the **live, editable preview** inside the back-office (MelisCms) by re-rendering any page in `melis` mode. MelisFront owns no database tables — all page/site/template/SEO data is read from [melis-engine](/reference/modules/melis-engine), which is the single source of truth.
+
+MelisFront is one of a tightly-coupled trio: [melis-engine](/reference/modules/melis-engine) (data layer), **melis-front** (front rendering), [melis-cms](/reference/modules/melis-cms) (back-office). Changes or questions about any one module routinely involve the other two.
 
 ## Enable it
 
-MelisFront is a standard Laminas module listed in `config/melis.module.load.php` (it ships enabled
-in the skeleton):
+Add to `config/melis.module.load.php`:
 
 ```php
 return [
-    // …
     'MelisFront',
-    // …
 ];
 ```
 
-It requires `melisplatform/melis-core` and, at runtime, the page/data services from
-`melis-engine` and the CMS data from `melis-cms`. Its `config/module.load.php` pulls in the Laminas
-components it needs (`Laminas\Navigation`, `Laminas\I18n`, `Laminas\Router`, `Laminas\Form`,
-`Laminas\Db`, …).
+Declared Melis dependency: `melisplatform/melis-core`. At runtime it also consumes MelisEngine services. Load order: `melis-core` → **melis-front** → `melis-engine` → `melis-cms`.
 
 ## Key services
 
-Registered as `service_manager` aliases in `config/module.config.php`:
-
 | Service alias | Role |
 | --- | --- |
-| `MelisFrontHead` | Updates the page `<title>` / meta description from the generated content (`updateTitleAndDescription($idPage, $contentGenerated)`) and injects plugin CSS/JS resources (`updatePluginsRessources($content)`). |
-| `MelisSiteConfigService` | Reads per-site config — `getSiteConfigByKey($key, $pageId, $section, $language)`, `getSiteConfigByPageId($pageId, $langLocale)`, `getSiteConfig($siteId, $returnAll)`, `getConfig($siteName)`. |
-| `MelisSiteTranslationService` | CRUD + lookup of per-site translation keys/texts (`getSiteTranslation()`, `getText()`, `saveTranslation()`, `cacheTranslations($siteId)`, …). Reads via `MelisSiteTranslationTable` (provided by the CMS layer). |
-| `MelisTranslationService` | Backoffice/locale translations — `getTranslationsByLocale($locale)`, `translateByLocale($key, $locale)`, `boTranslate($key)`. |
-| `MinifyAssets` | Bundles & minifies a site's CSS/JS — `minifyAssets($siteId)`, `minifySitesVendorAssets()`, `getSiteBundleData($siteId)`. |
-| `MelisFrontNavigation` | Factory that builds the front navigation tree (`Navigation\Factory\MelisFrontNavigationFactory`). |
-
-## Backoffice
-
-MelisFront is a front-office module: it adds **no backoffice tool** of its own (no `app.toolstree`
-entry). Its backoffice-facing surface is the **editor render mode** — when a page is opened in the
-CMS page editor, MelisFront re-renders it in `renderMode=melis` (and `preview`) so plugins display
-their in-place edit controls. The drag-and-drop endpoints (`/dnd-layout`, `/dnd-remove`,
-`/dnd-update-order`) and the AJAX `/melispluginrenderer` route back the editor UI.
+| `MelisFrontHead` | Manages page `<title>`, meta description, canonical and injects plugin CSS/JS assets. |
+| `MelisSiteConfigService` | Reads per-site configuration by key, page or language — supports file + DB merge. |
+| `MelisSiteTranslationService` | Per-site translation key/text lookup and CRUD, cached per site. |
+| `MelisTranslationService` | Module/locale translations (back-office strings), cached. |
+| `MinifyAssets` | Builds `bundle.css` / `bundle.js` per site using `matthiasmullie/minify`. |
+| `MelisFrontNavigation` | Navigation factory that builds a `Laminas\Navigation` tree from the engine page tree. |
 
 ## Front office
 
+### Routing
+
+The main front route is a Regex pattern matching `.../id/{idpage}` — dispatched to `MelisFront\Controller\Index::index`. Two child routes extend it:
+
+- `/renderMode/melis` — back-office edit mode (used by MelisCms to render a page for editing).
+- `/preview` — preview of the *saved* version (`renderMode: melis`, `preview: true`).
+
+Special routes: `sitemap(.xml)`, `/css/plugin-width.css`, `/melissearchindex/…`, `/melispluginrenderer` (AJAX single-plugin render), `/minify-assets`.
+
+### Render pipeline (listeners)
+
+Wired in `src/Module.php` across `EVENT_DISPATCH` and `EVENT_FINISH` (~19 listeners total):
+
+| Phase | Listeners |
+| --- | --- |
+| `EVENT_LOAD_MODULES_POST` | `MelisFrontSEORouteListener` (SEO URL routes from DB), `MelisFrontSiteConfigListener`, `MelisFrontMiniTemplateConfigListener` |
+| `EVENT_DISPATCH` | `MelisFrontXSSParameterListener`, `MelisFrontHomePageRoutingListener` / `…HomePageIdOverrideListener`, `MelisFrontSEODispatchRouterRegularUrlListener` (page validation, 404/301, fires `melisfront_site_dispatch_ready`), `MelisFront404To301Listener`, `MelisFront404CatcherListener` |
+| `EVENT_FINISH` | `MelisFrontPluginsToLayoutListener` (plugin CSS/JS), `MelisFrontSEOMetaPageListener` (title/description/canonical), `MelisFrontAttachCssListener` (page CSS), `MelisFrontLayoutListener` (front layout or BO layout + TinyMCE in `melis` mode), `MelisFrontPageCacheListener`, `MelisFrontMinifiedAssetsCheckerListener` |
+
 ### Templating plugins (controller plugins)
 
-Built-in content blocks editors drop into a `MelisDragDropZone`, registered under
-`controller_plugins` and configured in `config/plugins/*.config.php`:
+All extend `MelisEngine\Controller\Plugin\MelisTemplatingPlugin`. Registered under `controller_plugins`:
 
-| Plugin | Block |
+| Plugin alias | Block |
 | --- | --- |
-| `MelisFrontTagHtmlPlugin` / `MelisFrontTagTextareaPlugin` / `MelisFrontTagMediaPlugin` | Inline editable content tags (HTML, text, media) — the `MelisTag` family. |
-| `MelisFrontDragDropZonePlugin` | A drop zone that hosts other plugins (the layout container). |
-| `MelisFrontMenuPlugin` | Renders a site menu from the page tree. |
-| `MelisFrontBreadcrumbPlugin` | Renders a breadcrumb trail. |
-| `MelisFrontShowListFromFolderPlugin` | Lists items from a media folder. |
-| `MelisFrontBlockSectionPlugin` | A reusable, shared block/section. |
-| `MelisFrontGenericContentPlugin` | Generic configurable content block. |
-| `MelisFrontGdprBannerPlugin` / `MelisFrontGdprRevalidationPlugin` | GDPR consent banner & revalidation. |
-| `MiniTemplatePlugin` | Lightweight inline mini-template. |
-
-These extend `MelisEngine\Controller\Plugin\MelisTemplatingPlugin`; see [Plugins](/guide/plugins) for
-how to write your own. (`MelisFrontSearchResultsPlugin` exists but is commented out pending a Laminas
-search backend.)
+| `MelisFrontTagHtmlPlugin` | Inline-editable HTML / rich-text zone. |
+| `MelisFrontTagTextareaPlugin` | Plain text zone. |
+| `MelisFrontTagMediaPlugin` | Image / file from the media library. |
+| `MelisFrontMenuPlugin` | Navigation menu built from the page tree. |
+| `MelisFrontBreadcrumbPlugin` | Breadcrumb trail (Home › … › Current page). |
+| `MelisFrontShowListFromFolderPlugin` | Lists sub-pages from a chosen folder automatically. |
+| `MelisFrontDragDropZonePlugin` | Layout container (drop zone for other plugins). |
+| `MelisFrontBlockSectionPlugin` | Reusable block/section container. |
+| `MelisFrontGenericContentPlugin` | General-purpose content block. |
+| `MelisFrontGdprBannerPlugin` | Cookie / GDPR consent banner. |
+| `MelisFrontGdprRevalidationPlugin` | Re-asks consent when the GDPR policy changes. |
+| `MelisFrontSearchResultsPlugin` | Renders internal site-search results. |
+| `MiniTemplatePlugin` | Inserts a pre-built mini-template in one click. |
 
 ### View helpers
 
-Registered under `view_helpers` aliases — use these inside a site's `.phtml` templates:
+Used inside a site's `.phtml` templates (registered under `view_helpers`):
 
 | Helper alias | Use |
 | --- | --- |
-| `MelisDragDropZone` | Renders a drag-and-drop zone where plugins are placed. |
-| `MelisTag` | Renders an inline-editable content tag. |
-| `MelisMenu` | Renders a navigation menu. |
-| `MelisLink` / `MelisPageLangLink` / `MelisHomePageLink` | Build page URLs (link, language version, home). |
-| `siteTranslate` | Translate a site translation key. |
-| `boTranslate` | Translate a backoffice/locale key. |
-| `SiteConfig` | Read a value from the site config. |
-| `MelisGdprBannerPlugin` / `MelisListFromFolderPlugin` | Render the GDPR banner / folder list. |
+| `MelisTag` | Declares an editable zone (HTML or media) that editors fill in-place. |
+| `MelisLink` | Outputs a page's SEO-friendly URL (stays correct if the page moves). |
+| `MelisMenu` | Renders a navigation menu from the page tree. |
+| `MelisDragDropZone` | Renders a drag-and-drop zone hosting other plugins. |
+| `siteTranslate` | Outputs a site translation string by key. |
+| `SiteConfig` | Reads a site configuration value. |
 
-### Routing & listeners
+Language/home helpers for language-version links and the home-page link are also available.
 
-`config/module.config.php` defines the front routes — the page route (`Regex` on `.../id/{idpage}`),
-the sitemap routes (`sitemap.xml` / `sitemap_index` / per-lang), `/melispluginrenderer`,
-`/minify-assets` and the drag-and-drop endpoints. The render pipeline is assembled by the listeners
-attached in `src/Module.php`, including `MelisFrontLayoutListener`, `MelisFrontPluginsToLayoutListener`,
-the SEO listeners (`MelisFrontSEORouteListener`, `MelisFrontSEOMetaPageListener`,
-`MelisFrontSEODispatchRouterRegularUrlListener`), `MelisFront404CatcherListener` /
-`MelisFront404To301Listener`, `MelisFrontPageCacheListener`, `MelisFrontMinifiedAssetsCheckerListener`,
-`MelisFrontHomePageRoutingListener` and `MelisFrontXSSParameterListener`.
+### Navigation
+
+`MelisFrontNavigation` (`src/Navigation/Factory/`) extends the Laminas navigation factory to build a `Laminas\Navigation` object from the engine's page tree (`MelisEnginePage` / `MelisEngineTree`), which the Menu and Breadcrumb helpers render.
+
+### Asset minification
+
+`MinifyAssetsService` (backed by `matthiasmullie/minify`) builds `bundle.css` / `bundle.js` per site. `MelisFrontMinifiedAssetsCheckerListener` injects them (cache-busted) when present. Trigger a build via the `/minify-assets` route.
 
 ## Database tables
 
-MelisFront ships **no install SQL and owns no `melis_*` table**. The page, site, language and
-translation tables it reads (e.g. `MelisSiteTranslationTable`) are provided by
-[melis-cms](/reference/modules/melis-cms) / [melis-engine](/reference/modules/melis-engine).
+MelisFront owns **no database tables**. All page, site, language, SEO and translation data is owned by [melis-engine](/reference/modules/melis-engine) and [melis-cms](/reference/modules/melis-cms).
 
 ## Example
 
-Typical front template usage (inside a site module's `.phtml`):
+Typical usage in a site `.phtml` template and PHP service calls:
 
 ```php
-<?php // a site page template ?>
-<title><?= $this->SiteConfig('site_title', $idPage) ?></title>
+// Inside a site page template (.phtml)
+<?= $this->MelisMenu($idPage); ?>                         // navigation menu from the page tree
+<a href="<?= $this->MelisLink($targetPageId); ?>">…</a>  // SEO-friendly page link
+<?= $this->MelisTag($idPage, 'zone_main', 'html'); ?>    // editable HTML zone
+<?= $this->siteTranslate('btn_send'); ?>                  // site translation string
+<?= $this->SiteConfig('contact_email'); ?>               // site config value
+```
 
-<?= $this->MelisMenu($idPage) ?>
+```php
+// Reading site config and translations in PHP
+$siteConfig = $serviceManager->get('MelisSiteConfigService');
+$email = $siteConfig->getSiteConfigByKey('contact_email', $siteId);
 
-<main>
-    <?= $this->MelisDragDropZone('main_zone', $idPage) ?>
-</main>
+$tr = $serviceManager->get('MelisSiteTranslationService')
+        ->getEntryByTextAndSiteId('btn_send', $siteId, $langId);
+```
 
-<footer><?= $this->siteTranslate('footer_copyright') ?></footer>
+```php
+// Hooking the render pipeline (after page validation, before render)
+$sharedEvents->attach('MelisFront', 'melisfront_site_dispatch_ready', function ($e) {
+    $params = $e->getParams(); // page id, site, renderMode…
+    // e.g. force a redirect, add data to the layout, A/B-test…
+}, 50);
 ```
 
 ## Key files
 
 | Concern | Path |
 | --- | --- |
-| Module config (routes, services, plugins, helpers, caches) | `vendor/melisplatform/melis-front/config/module.config.php` |
-| Front app config (GDPR, DnD layouts) | `vendor/melisplatform/melis-front/config/app.interface.php` |
-| Plugin configs | `vendor/melisplatform/melis-front/config/plugins/` |
-| Listeners (render / SEO / cache) | `vendor/melisplatform/melis-front/src/Module.php`, `vendor/melisplatform/melis-front/src/Listener/` |
-| Services | `vendor/melisplatform/melis-front/src/Service/` |
-| Templating plugins | `vendor/melisplatform/melis-front/src/Controller/Plugin/` |
+| Module bootstrap + listener wiring | `vendor/melisplatform/melis-front/src/Module.php` |
+| Routes, services, plugins, helpers, caches | `vendor/melisplatform/melis-front/config/module.config.php` |
+| Render-pipeline listeners | `vendor/melisplatform/melis-front/src/Listener/` |
+| Services (Head, SiteConfig, Translations, Minify) | `vendor/melisplatform/melis-front/src/Service/` |
+| Templating plugins (content blocks) | `vendor/melisplatform/melis-front/src/Controller/Plugin/` |
 | View helpers | `vendor/melisplatform/melis-front/src/View/Helper/` |
+| Navigation factory | `vendor/melisplatform/melis-front/src/Navigation/Factory/` |
 | Front controllers | `vendor/melisplatform/melis-front/src/Controller/` |
+
+See also: [melis-engine](/reference/modules/melis-engine), [melis-cms](/reference/modules/melis-cms), [melis-core](/reference/modules/melis-core)

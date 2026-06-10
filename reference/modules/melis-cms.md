@@ -1,143 +1,184 @@
 # MelisCms
 
 > The CMS backoffice — sites, page tree, page editor, templates, styles and SEO.
-> Composer package `melisplatform/melis-cms`.
+> Package `melisplatform/melis-cms`.
 
 ## Purpose
 
-`MelisCms` is the content-management backoffice of Melis Platform. It provides the site tree
-explorer, the page editor (Edition, Properties, SEO, Languages tabs), the drag-and-drop plugin
-zones used to compose page content, and the administration tools for sites, templates, styles,
-languages, platform IDs, domains and site redirects. It writes the page/site data that
-[melis-engine](/reference/modules/melis-engine) reads and [melis-front](/reference/modules/melis-front)
-renders. For the end-to-end story see [Build a site](/guide/build-a-site).
+`MelisCms` is the backoffice orchestration layer for building and running websites on the Melis
+platform. It provides the site tree, the page editor (Edition, Properties, SEO, Languages tabs),
+drag-and-drop plugin zones for composing page content, and administration tools for sites,
+templates, styles, languages, platform IDs, domains and site redirects. It **owns no database
+tables** — it reads and writes everything through [melis-engine](/reference/modules/melis-engine),
+and page rendering (including the live editing preview) is handled by
+[melis-front](/reference/modules/melis-front).
+
+## The MelisCms / MelisFront / MelisEngine trio
+
+These three modules form one tightly coupled system. A change or question about any one of them
+routinely involves the others.
+
+- **MelisEngine** — owns the entire CMS database model (pages, tree, sites, templates, languages,
+  SEO, styles) and exposes it via table gateways, services and a filesystem cache. Also defines
+  `MelisTemplatingPlugin`, the base class every content block extends.
+- **MelisFront** — front-office rendering pipeline; turns a URL into a finished page and also
+  powers the live editable preview inside the backoffice (`renderMode/melis`).
+- **MelisCms** *(this module)* — the backoffice UI layer; drives the page lifecycle by firing events
+  that engine and front listeners handle.
+
+**Load order:** `melis-core` → `melis-front` → `melis-engine` → `melis-cms`.
 
 ## Enable it
 
-`MelisCms` is a standard Laminas module. It ships enabled in the skeleton — its name is listed in
-`config/melis.module.load.php`:
+Add to `config/melis.module.load.php`:
 
 ```php
 return [
     'MelisCms',
-    // …
 ];
 ```
 
-It requires `melisplatform/melis-core`, `melisplatform/melis-engine` and `melisplatform/melis-front`
-(declared in its `composer.json`). It has no install SQL of its own; the CMS tables are part of the
-platform schema (defined via melis-engine, see below).
+Requires `melisplatform/melis-core`, `melisplatform/melis-engine` and `melisplatform/melis-front`
+(declared in its `composer.json`). It has no install SQL of its own; the CMS schema is part of
+melis-engine.
 
 ## Key services
 
-Registered under `service_manager` in `config/module.config.php`. Resolve them with
-`$sm->get('<alias>')`.
+Resolve with `$sm->get('<alias>')`.
 
 | Service alias | Role |
 | --- | --- |
-| `MelisCmsPageService` | Save a page and its parts: `savePage()`, `savePagePublished()`, `savePageSaved()`, `savePageSeo()`, `savePageLang()`, `savePageStyle()`, `savePageTree()`, `duplicatePage()`, `saveProperties()`. |
-| `MelisCmsSiteService` | Manage sites: `saveSite()`, `getSitePages()`, `getAllSites()`, `getSiteById()`, `getSiteByModule()`, `getModulePath()`. |
-| `MelisCmsPageGetterService` | `getPageContent($pageId)` — return the full HTML of a page (uses the page cache under `/cache`; the page must have been generated at least once). |
-| `MelisCmsRightsService` (alias `MelisCmsRights`) | Resolve user access to interface elements: `isAccessible()`, `getRightsValues()`, `createXmlRightsValues()`, `isActionButtonActive()`. |
-| `MelisCmsSitesDomainsService` | Per-environment domains: `getEnvironments()`, `getDomainsBySiteId()`, `getDomainBySiteIdAndEnv()`, `saveSiteDomain()`. |
-| `MelisCmsSitesPropertiesService` | Site properties (key/value site settings). |
-| `MelisCmsSiteModuleLoadService` | Per-site module loading. |
-| `MelisCmsMiniTemplateService` / `MelisCmsMiniTemplateGetterService` | Mini-templates (reusable backoffice content blocks) and their categories: `createMiniTemplate()`, `saveCategory()`, `getTree()`, `getMiniTemplates()`. |
-| `MelisCmsPageExportService` / `MelisCmsPageImportService` | Export a page tree to a ZIP and re-import it. |
+| `MelisCmsPageService` | Write the page model: `savePage()`, `savePagePublished()`, `savePageSaved()`, `savePageSeo()`, `savePageLang()`, `savePageStyle()`, `savePageTree()`, `saveProperties()`. |
+| `MelisCmsSiteService` | Site CRUD and page-per-site queries. |
+| `MelisCmsPageGetterService` | `getPageContent($pageId)` — returns cached rendered HTML of a page. |
+| `MelisCmsRights` | Back-office permission checks: `isAccessible()`, `isActionButtonActive()`. |
+| `MelisCmsSitesDomainsService` | Per-environment domain management. |
+| `MelisCmsSitesPropertiesService` | Site-wide key/value settings (Site config tab). |
+| `MelisCmsSiteModuleLoadService` | Per-site module loading (Module loading tab). |
+| `MelisCmsMiniTemplateService` / `MelisCmsMiniTemplateGetterService` | Mini-template library and category management. |
+| `MelisCmsPageExportService` / `MelisCmsPageImportService` | Export/import a page tree as a file. |
 
 ## Backoffice
 
-`MelisCms` adds the CMS section of the backoffice. The interface tree lives in
-`config/app.interface.php` / `config/app.tools.php`; tools are addressed by `melisKey`. Main entries:
+`MelisCms` registers the full CMS section of the backoffice. Interface tree in
+`config/app.interface.php` / `config/app.tools.php`. Main tool entries:
 
 | melisKey | Tool |
 | --- | --- |
-| `meliscms_sitetree` | The site tree explorer (left menu + center page editor). |
-| `meliscms_site_tools` | Site administration group. |
-| `meliscms_tool_sites` | Sites tool. |
-| `meliscms_tool_templates` | Templates tool (`ToolTemplate` controller). |
-| `meliscms_tool_styles` | Styles tool (`ToolStyle`). |
-| `meliscms_tool_language` | Languages tool. |
-| `meliscms_tool_platform_ids` | Platform IDs tool. |
-| `meliscms_tool_site_301` | Site redirect (301) tool. |
-| `meliscms_mini_template_manager` | Mini-template manager. |
+| `meliscms_sitetree` | Site tree explorer + page editor. |
+| `meliscms_tool_sites` | Sites (create/edit, domains, languages, module loading, config, translations). |
+| `meliscms_tool_templates` | Templates manager. |
+| `meliscms_tool_styles` | Styles manager. |
+| `meliscms_tool_language` | Languages (master list). |
+| `meliscms_tool_platform_ids` | Platform IDs (per-environment ID ranges). |
+| `meliscms_tool_site_301` | Site redirects. |
+| `meliscms_mini_template_manager` | Mini-template library + category menu manager. |
 
-The page editor controllers include `PageController`, `PageEditionController`,
-`PagePropertiesController`, `PageSeoController`, `PageLanguagesController` and
-`PageDuplicationController`. `FrontPluginsController` powers the in-editor plugin menu and the
-plugin-configuration modal used by the drag-and-drop zones.
+Page editor controllers: `PageController`, `PageEditionController`, `PagePropertiesController`,
+`PageSeoController`, `PageLanguagesController`, `PageDuplicationController`,
+`PageExportController`, `PageImportController`. Plugin menu and drag-and-drop modals:
+`FrontPluginsController`, `FrontPluginsModalController`.
 
-### Dashboard plugin
+### Dashboard widget
 
-`MelisCmsPagesIndicatorsPlugin` (module `meliscms`, action `pageIndicators`) is a backoffice
-dashboard widget that surfaces page indicators. See [Plugins](/guide/plugins) for the dashboard
-plugin model.
-
-## Front office
-
-`MelisCms` is a backoffice module and ships **no** templating plugins or view helpers of its own —
-front rendering is handled by [melis-engine](/reference/modules/melis-engine) and
-[melis-front](/reference/modules/melis-front). What it provides on the editing side is the plugin
-**authoring** surface: editors drop content blocks into a page's `MelisDragDropZone`, and
-`FrontPluginsController` renders the plugin menu, modal forms and saves the chosen parameters into
-the page content. Form-element factories such as `MelisCmsPluginSiteSelect` and
-`MelisCmsPluginSiteModuleSelect` are reused by other modules' plugin forms.
+`MelisCmsPagesIndicatorsPlugin` — shows site and page counts (published vs not) on the
+backoffice dashboard.
 
 ## Database tables
 
-`MelisCms` operates on the core CMS schema (the table gateways are defined in melis-engine and
-consumed by the CMS services):
+`MelisCms` owns no tables. The CMS schema is defined in melis-engine and accessed via its
+gateways and services. Never query the CMS tables directly — use the engine
+gateways/services so caching and the rest of the ecosystem stay consistent.
 
-| Table | Holds |
+## Page lifecycle events
+
+The page lifecycle is implemented through 19 listeners wired in `Module.php::onBootstrap`. These
+events are the primary extension point — hook them instead of calling `MelisCmsPageService`
+directly so history, caches and other modules stay in sync.
+
+| Action | Events |
 | --- | --- |
-| `melis_cms_site` | Sites. |
-| `melis_cms_site_config` | Per-site configuration. |
-| `melis_cms_site_domain` | Per-environment domains. |
-| `melis_cms_site_home` | Site home page mapping. |
-| `melis_cms_site_langs` | Languages enabled per site. |
-| `melis_cms_page_tree` | The page tree (hierarchy). |
-| `melis_cms_page_saved` | Saved (draft) page content. |
-| `melis_cms_page_published` | Published page content. |
-| `melis_cms_page_lang` | Page language links. |
-| `melis_cms_page_seo` | Per-page SEO. |
-| `melis_cms_page_style` | Per-page styles. |
-| `melis_cms_page_default_urls` | Default/canonical page URLs. |
-| `melis_cms_template` | Templates. |
-| `melis_cms_style` | Styles. |
-| `melis_cms_lang` | CMS languages. |
-| `melis_cms_platform_ids` | Platform IDs (environments). |
-| `melis_cms_mini_tpl_category`, `melis_cms_mini_tpl_site_category`, `melis_cms_mini_tpl_category_template` | Mini-template categories and links. |
+| Save draft | `meliscms_page_save_start` / `_end` (+ `…savetree_*`, `…saveproperties_*`, `…saveedition_*`, `…saveseo_*`) |
+| Publish | `meliscms_page_publish_start` / `_end` |
+| Unpublish | `meliscms_page_unpublish_start` / `_end` |
+| Delete | `meliscms_page_delete_start` / `_end` (+ `…deleteseo_*`, `…delete_page_*`) |
+| Move | `meliscms_page_move_start` / `_end` |
+| Duplicate | `meliscms_page_duplicate_start` / `_end` |
+| Plugin session | `meliscms_page_savesession_plugin_*`, `meliscms_page_removesession_plugin_*` |
+
+Two additional hooks extend the page editor itself:
+
+- **`melis_cms_page_tabs_alter`** — add or remove tabs in the page editor (used by the Historic
+  and Script Editor modules).
+- **`modify_page_properties_form_config`** — alter the Properties form to add custom fields.
 
 ## Example
 
-Save a page and read back its rendered HTML:
+### React to a page being published
 
 ```php
-// In a controller / service with the service manager available
-$pageSrv = $sm->get('MelisCmsPageService');
-$pageId  = $pageSrv->savePage($pageTree, $pagePublished, $pageSaved, $pageSeo, $pageLang, $pageStyle);
-
-$pageGetter  = $sm->get('MelisCmsPageGetterService');
-$pageContent = $pageGetter->getPageContent($pageId); // full HTML (page must have been generated once)
+// In your Module.php::onBootstrap (or a listener's attach())
+$sharedEvents = $eventManager->getSharedManager();
+$sharedEvents->attach(
+    'MelisCms',                       // identifier MelisCms fires under
+    'meliscms_page_publish_end',
+    function (\Laminas\EventManager\EventInterface $e) {
+        $params = $e->getParams();
+        $idPage = $params['idPage'] ?? null;
+        // log, sync, clear a custom cache, notify…
+    },
+    50                                 // priority
+);
 ```
+
+### Read page data (via engine services)
+
+```php
+$sm = $this->getServiceManager();
+
+// Full page data (published or draft)
+$pageSvc   = $sm->get('MelisEnginePage');
+$published = $pageSvc->getDatasPage($idPage);              // live
+$draft     = $pageSvc->getDatasPage($idPage, 'saved');    // working draft
+
+// Tree helpers
+$tree      = $sm->get('MelisEngineTree');
+$children  = $tree->getPageChildren($idPage, 1);           // 1 = published only
+$url       = $tree->getPageLink($idPage, true);            // absolute URL
+```
+
+### Invalidate the page cache after an out-of-band mutation
+
+```php
+$cache = $sm->get('MelisEngineCacheSystem');
+$cache->deleteCacheByPrefix('page_' . $idPage, 'meliscms_page');
+```
+
+## Adding a new content block
+
+Every content block extends `MelisTemplatingPlugin` (defined in melis-engine). Implement
+`front()` to render on the live site and `back()` to render the edit container, then register
+the plugin. The News, Slider and Category2 modules are reference implementations — see their
+docs for full examples.
 
 ## Key files
 
 | Concern | Path |
 | --- | --- |
-| Module config (services, controllers, dashboard plugin) | `vendor/melisplatform/melis-cms/config/module.config.php` |
+| Module bootstrap + listener wiring | `vendor/melisplatform/melis-cms/src/Module.php` |
+| Services, controllers, form factories | `vendor/melisplatform/melis-cms/config/module.config.php` |
 | Backoffice interface tree | `vendor/melisplatform/melis-cms/config/app.interface.php` |
-| Tools (templates, styles, …) | `vendor/melisplatform/melis-cms/config/app.tools.php` |
+| Tool configs (DataTable, forms) | `vendor/melisplatform/melis-cms/config/app.tools.php` |
 | Page service | `vendor/melisplatform/melis-cms/src/Service/MelisCmsPageService.php` |
 | Site service | `vendor/melisplatform/melis-cms/src/Service/MelisCmsSiteService.php` |
-| Page getter (HTML/cache) | `vendor/melisplatform/melis-cms/src/Service/MelisCmsPageGetterService.php` |
 | Rights service | `vendor/melisplatform/melis-cms/src/Service/MelisCmsRightsService.php` |
-| Page editor plugin controller | `vendor/melisplatform/melis-cms/src/Controller/FrontPluginsController.php` |
-| Dashboard plugin | `vendor/melisplatform/melis-cms/src/Controller/DashboardPlugins/MelisCmsPagesIndicatorsPlugin.php` |
-| Event listeners | `vendor/melisplatform/melis-cms/src/Listener/` |
+| Page getter (cache) | `vendor/melisplatform/melis-cms/src/Service/MelisCmsPageGetterService.php` |
+| All listeners (19) | `vendor/melisplatform/melis-cms/src/Listener/` |
+| Plugin menu controller | `vendor/melisplatform/melis-cms/src/Controller/FrontPluginsController.php` |
+| Dashboard widget | `vendor/melisplatform/melis-cms/src/Controller/DashboardPlugins/MelisCmsPagesIndicatorsPlugin.php` |
 
 ## See also
 
-- [Build a site](/guide/build-a-site) — the CMS + engine + front workflow.
-- [Plugins](/guide/plugins) — templating and dashboard plugins.
-- [Module reference](/reference/modules) — all platform modules.
+- [melis-engine](/reference/modules/melis-engine) — owns the CMS data model and all table gateways.
+- [melis-front](/reference/modules/melis-front) — front-office rendering and live preview.
+- [melis-core](/reference/modules/melis-core) — auth, rights, events and base config.
