@@ -87,7 +87,9 @@ h1, h2, h3, h4, .VPHero .name, .VPHero .text {
 /* Real flag images in the language switcher (emoji flags don't render on Windows).
    VitePress renders each locale link as `.VPMenuLink a` (desktop dropdown) and
    `.VPNavScreenTranslations .list a` (mobile); the current language is a `.title`.
-   The French link's href starts with /fr; the other one is English. */
+   Match the locale by the `/xx/` segment CONTAINED in the href (base-independent:
+   works under '/' locally and '/docs/' on GitHub Pages). Flag URLs come from
+   var(--flag-xx), injected base-aware in config.mts head. */
 .VPNavBarTranslations .VPMenuLink a::before,
 .VPNavBarTranslations .items .title::before,
 .VPNavScreenTranslations .list a::before {
@@ -102,69 +104,69 @@ h1, h2, h3, h4, .VPHero .name, .VPHero .text {
   vertical-align: -1px;
 }
 /* French */
-.VPNavBarTranslations .VPMenuLink a[href^='/fr']::before,
-.VPNavScreenTranslations .list a[href^='/fr']::before,
+.VPNavBarTranslations .VPMenuLink a[href*='/fr/']::before,
+.VPNavScreenTranslations .list a[href*='/fr/']::before,
 html[lang^='fr'] .VPNavBarTranslations .items .title::before {
-  background-image: url('/flags/fr.svg');
+  background-image: var(--flag-fr);
 }
 /* Spanish */
-.VPNavBarTranslations .VPMenuLink a[href^='/es']::before,
-.VPNavScreenTranslations .list a[href^='/es']::before,
+.VPNavBarTranslations .VPMenuLink a[href*='/es/']::before,
+.VPNavScreenTranslations .list a[href*='/es/']::before,
 html[lang^='es'] .VPNavBarTranslations .items .title::before {
-  background-image: url('/flags/es.svg');
+  background-image: var(--flag-es);
 }
 /* German */
-.VPNavBarTranslations .VPMenuLink a[href^='/de']::before,
-.VPNavScreenTranslations .list a[href^='/de']::before,
+.VPNavBarTranslations .VPMenuLink a[href*='/de/']::before,
+.VPNavScreenTranslations .list a[href*='/de/']::before,
 html[lang^='de'] .VPNavBarTranslations .items .title::before {
-  background-image: url('/flags/de.svg');
+  background-image: var(--flag-de);
 }
 /* Chinese */
-.VPNavBarTranslations .VPMenuLink a[href^='/zh']::before,
-.VPNavScreenTranslations .list a[href^='/zh']::before,
+.VPNavBarTranslations .VPMenuLink a[href*='/zh/']::before,
+.VPNavScreenTranslations .list a[href*='/zh/']::before,
 html[lang^='zh'] .VPNavBarTranslations .items .title::before {
-  background-image: url('/flags/zh.svg');
+  background-image: var(--flag-zh);
 }
 /* Portuguese */
-.VPNavBarTranslations .VPMenuLink a[href^='/pt']::before,
-.VPNavScreenTranslations .list a[href^='/pt']::before,
+.VPNavBarTranslations .VPMenuLink a[href*='/pt/']::before,
+.VPNavScreenTranslations .list a[href*='/pt/']::before,
 html[lang^='pt'] .VPNavBarTranslations .items .title::before {
-  background-image: url('/flags/pt.svg');
+  background-image: var(--flag-pt);
 }
 /* Italian */
-.VPNavBarTranslations .VPMenuLink a[href^='/it']::before,
-.VPNavScreenTranslations .list a[href^='/it']::before,
+.VPNavBarTranslations .VPMenuLink a[href*='/it/']::before,
+.VPNavScreenTranslations .list a[href*='/it/']::before,
 html[lang^='it'] .VPNavBarTranslations .items .title::before {
-  background-image: url('/flags/it.svg');
+  background-image: var(--flag-it);
 }
 /* Arabic */
-.VPNavBarTranslations .VPMenuLink a[href^='/ar']::before,
-.VPNavScreenTranslations .list a[href^='/ar']::before,
+.VPNavBarTranslations .VPMenuLink a[href*='/ar/']::before,
+.VPNavScreenTranslations .list a[href*='/ar/']::before,
 html[lang^='ar'] .VPNavBarTranslations .items .title::before {
-  background-image: url('/flags/ar.svg');
+  background-image: var(--flag-ar);
 }
 /* On v5 (legacy) pages only English + French exist. Hide the other locales in
    the language switcher — their corresponding link would be /<loc>/legacy/… and
    404. Those hrefs only ever occur on legacy pages, so this is scoped correctly
    (v6 pages use /<loc>/guide|reference/…, which don't match). */
-.VPNavBarTranslations .VPMenuLink:has(a[href^='/es/legacy']),
-.VPNavBarTranslations .VPMenuLink:has(a[href^='/de/legacy']),
-.VPNavBarTranslations .VPMenuLink:has(a[href^='/zh/legacy']),
-.VPNavBarTranslations .VPMenuLink:has(a[href^='/pt/legacy']),
-.VPNavBarTranslations .VPMenuLink:has(a[href^='/it/legacy']),
-.VPNavBarTranslations .VPMenuLink:has(a[href^='/ar/legacy']),
-.VPNavScreenTranslations .list .item:has(a[href^='/es/legacy']),
-.VPNavScreenTranslations .list .item:has(a[href^='/de/legacy']),
-.VPNavScreenTranslations .list .item:has(a[href^='/zh/legacy']),
-.VPNavScreenTranslations .list .item:has(a[href^='/pt/legacy']),
-.VPNavScreenTranslations .list .item:has(a[href^='/it/legacy']),
-.VPNavScreenTranslations .list .item:has(a[href^='/ar/legacy']) {
+.VPNavBarTranslations .VPMenuLink:has(a[href*='/es/legacy/']),
+.VPNavBarTranslations .VPMenuLink:has(a[href*='/de/legacy/']),
+.VPNavBarTranslations .VPMenuLink:has(a[href*='/zh/legacy/']),
+.VPNavBarTranslations .VPMenuLink:has(a[href*='/pt/legacy/']),
+.VPNavBarTranslations .VPMenuLink:has(a[href*='/it/legacy/']),
+.VPNavBarTranslations .VPMenuLink:has(a[href*='/ar/legacy/']),
+.VPNavScreenTranslations .list .item:has(a[href*='/es/legacy/']),
+.VPNavScreenTranslations .list .item:has(a[href*='/de/legacy/']),
+.VPNavScreenTranslations .list .item:has(a[href*='/zh/legacy/']),
+.VPNavScreenTranslations .list .item:has(a[href*='/pt/legacy/']),
+.VPNavScreenTranslations .list .item:has(a[href*='/it/legacy/']),
+.VPNavScreenTranslations .list .item:has(a[href*='/ar/legacy/']) {
   display: none !important;
 }
 
-/* English (fallback — none of the other locale prefixes) */
-.VPNavBarTranslations .VPMenuLink a:not([href^='/fr']):not([href^='/es']):not([href^='/de']):not([href^='/zh']):not([href^='/pt']):not([href^='/it']):not([href^='/ar'])::before,
-.VPNavScreenTranslations .list a:not([href^='/fr']):not([href^='/es']):not([href^='/de']):not([href^='/zh']):not([href^='/pt']):not([href^='/it']):not([href^='/ar'])::before,
+/* English (fallback — none of the other locale segments) */
+.VPNavBarTranslations .VPMenuLink a:not([href*='/fr/']):not([href*='/es/']):not([href*='/de/']):not([href*='/zh/']):not([href*='/pt/']):not([href*='/it/']):not([href*='/ar/'])::before,
+.VPNavScreenTranslations .list a:not([href*='/fr/']):not([href*='/es/']):not([href*='/de/']):not([href*='/zh/']):not([href*='/pt/']):not([href*='/it/']):not([href*='/ar/'])::before,
 html:not([lang^='fr']):not([lang^='es']):not([lang^='de']):not([lang^='zh']):not([lang^='pt']):not([lang^='it']):not([lang^='ar']) .VPNavBarTranslations .items .title::before {
-  background-image: url('/flags/gb.svg');
+  background-image: var(--flag-gb);
 }

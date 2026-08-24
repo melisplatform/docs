@@ -202,11 +202,13 @@ function versionNav(localePrefix: string, current: string, legacy: string) {
   }
 }
 
+const SITE_BASE = process.env.VITEPRESS_BASE ?? '/'
+
 // Shared config + per-locale (EN root, FR under /fr/).
 export default defineConfig({
   title: 'Melis Platform',
   description: 'Developer documentation for Melis Platform — the Laminas-based CMS & application platform.',
-  base: (process.env.VITEPRESS_BASE ?? '/') as '/',
+  base: SITE_BASE as '/',
   lastUpdated: true,
   cleanUrls: true,
   ignoreDeadLinks: 'localhostLinks',
@@ -224,7 +226,20 @@ export default defineConfig({
     ['link', {
       rel: 'stylesheet',
       href: 'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Rubik:wght@400;500;600;700&display=swap'
-    }]
+    }],
+    // Base-aware flag image URLs for the language switcher — baked with the real
+    // `base` at build time so they resolve under '/' locally and '/docs/' on
+    // GitHub Pages. custom.css references them via var(--flag-xx).
+    ['style', {}, `:root{` +
+      `--flag-gb:url(${SITE_BASE}flags/gb.svg);` +
+      `--flag-fr:url(${SITE_BASE}flags/fr.svg);` +
+      `--flag-es:url(${SITE_BASE}flags/es.svg);` +
+      `--flag-de:url(${SITE_BASE}flags/de.svg);` +
+      `--flag-zh:url(${SITE_BASE}flags/zh.svg);` +
+      `--flag-pt:url(${SITE_BASE}flags/pt.svg);` +
+      `--flag-it:url(${SITE_BASE}flags/it.svg);` +
+      `--flag-ar:url(${SITE_BASE}flags/ar.svg);` +
+    `}`]
   ],
 
   themeConfig: {
