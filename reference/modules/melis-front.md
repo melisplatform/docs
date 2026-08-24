@@ -1,12 +1,23 @@
 # MelisFront
 
-> The front-office rendering system that turns a URL into a finished page and powers the live editable preview. Package `melisplatform/melis-front`.
+> The front-office rendering system that turns a URL into a finished public page and ships the content blocks (page plugins) authors drop onto pages in the React back-office. Package `melisplatform/melis-front`.
 
 ## Purpose
 
-MelisFront is the runtime that resolves a web address to a Melis page, runs the render pipeline (routing, SEO, templating plugins, layout, caching, asset minification) and delivers the HTML response to the visitor. It also powers the **live, editable preview** inside the back-office (MelisCms) by re-rendering any page in `melis` mode. MelisFront owns no database tables — all page/site/template/SEO data is read from [melis-engine](/reference/modules/melis-engine), which is the single source of truth.
+MelisFront is the runtime that resolves a web address to a Melis page, runs the render pipeline (routing, SEO, templating plugins, layout, caching, asset minification) and delivers the HTML response to the visitor. It also powers the **live, editable preview** by re-rendering any page in `melis` mode. MelisFront owns no database tables — all page/site/template/SEO data is read from [melis-engine](/reference/modules/melis-engine), the single source of truth.
 
-MelisFront is one of a tightly-coupled trio: [melis-engine](/reference/modules/melis-engine) (data layer), **melis-front** (front rendering), [melis-cms](/reference/modules/melis-cms) (back-office). Changes or questions about any one module routinely involve the other two.
+MelisFront is one of a tightly-coupled trio: [melis-engine](/reference/modules/melis-engine) (data layer), **melis-front** (front rendering), [melis-cms](/reference/modules/melis-cms) (back-office editor). Changes to any one routinely involve the other two.
+
+## In the React back-office
+
+MelisFront has **no standalone React tool**: no `ui-react/` brick, no `brick.manifest.json`, no `react-api.php` — it never appears in the `/melis-react` left sidebar. Its entire back-office surface is the set of **page plugins (content blocks)** you configure inside the **MelisCms page editor**.
+
+You meet MelisFront when you edit a page: **MelisCms → open a page → Edition tab**. That Edition tab is the classic drag-drop page editor **rendered in an iframe inside the React shell** (`/melis/react-tool-page?key=meliscms_page`). Inside it you drag MelisFront's blocks onto zones and open their **Properties** modal. React only *hosts* that legacy editor; MelisFront contributes no React component of its own.
+
+There are two kinds of block:
+
+- **Tag blocks** edited **in place** on the page — **HTML** (rich text) and **Media** (image/file). No modal.
+- **Config blocks** set up through a **Properties** modal — **Menu**, **Breadcrumb**, **List-from-folder**, **GDPR banner**. They generate content from the page tree / site config.
 
 ## Enable it
 
@@ -20,27 +31,75 @@ return [
 
 Declared Melis dependency: `melisplatform/melis-core`. At runtime it also consumes MelisEngine services. Load order: `melis-core` → **melis-front** → `melis-engine` → `melis-cms`.
 
+## Tag blocks — edit in place
+
+### HTML (Text)
+
+The workhorse block: a **rich-text area** (TinyMCE) for titles, paragraphs, links and formatted content. Edited **directly on the page**, with no Properties modal. Plugin class `MelisFrontTagHtmlPlugin`.
+
+![HTML/Text block in the page editor with the full TinyMCE toolbar](/screenshots/react/melis-front/melisfront-page-plugin-html-tag.png)
+
+### Media
+
+Places an **image or file** from the media library. Also edited in place through a compact toolbar with an "Add media content here" placeholder. Plugin class `MelisFrontTagMediaPlugin`.
+
+![Media block in place with the Add media content here placeholder](/screenshots/react/melis-front/melisfront-page-plugin-media-tag.png)
+
+## Config blocks — Properties modal
+
+Config blocks are set up through a small **Properties** modal rendered by the platform. The two recurring fields are the **Template** dropdown (`MelisEnginePluginTemplateSelect`, field `template_path`) that picks the `.phtml` view, and a **page picker** (`MelisText` with a `fa fa-sitemap` button) that sets the starting/parent page in the tree. Each config block declares its modal as a `melis.modal_form` (Laminas form spec) in `config/plugins/<Plugin>.config.php`; there is no per-plugin React component.
+
+### Menu
+
+Builds a **navigation menu automatically from the page tree**. Modal fields: **Template** and **Starting page**. Plugin `MelisFrontMenuPlugin` (field `pageIdRootMenu`).
+
+![Menu block Properties modal with Template and Starting page fields](/screenshots/react/melis-front/melisfront-page-plugin-menu-config-properties.png)
+
+### Breadcrumb
+
+Renders the "you are here" trail (Home › Section › Page). Modal fields: **Template** (default `MelisFront/breadcrumb`) and **Starting page**. Plugin `MelisFrontBreadcrumbPlugin` (field `pageIdRootBreadcrumb`).
+
+![Breadcrumb block Properties modal with Template and Starting page fields](/screenshots/react/melis-front/melisfront-page-plugin-breadcrumb-config-properties.png)
+
+### List-from-folder
+
+Takes a **folder in the page tree and lists its child pages** automatically. Modal fields: **Template** (how each item renders) and **Parent page** (the source folder). Plugin `MelisFrontShowListFromFolderPlugin` (field `pageIdFolder`).
+
+![List-from-folder Properties modal with Template and Parent page fields](/screenshots/react/melis-front/melisfront-page-plugin-folderlisting-config-properties.png)
+
+### GDPR banner
+
+The **cookie/consent banner** shown on the public site. Its modal only needs the **Template**; wording comes from the site's GDPR texts. Plugin `MelisFrontGdprBannerPlugin`.
+
+![GDPR banner Properties modal with a single Template field](/screenshots/react/melis-front/melisfront-page-plugin-gdprbanner-config-properties.png)
+
+### Config modal fields
+
+| Plugin | Modal fields (name / type) | Default template |
+| --- | --- | --- |
+| Breadcrumb | `template_path` (`MelisEnginePluginTemplateSelect`) · `pageIdRootBreadcrumb` (`MelisText`, sitemap) | `MelisFront/breadcrumb` |
+| Menu | `template_path` · `pageIdRootMenu` (`MelisText`, sitemap) | `MelisFront/menu` |
+| List-from-folder | `template_path` · `pageIdFolder` (`MelisText`, sitemap) | `MelisFront/show-list-from-folder` |
+| GDPR banner | `template_path` only | `MelisFront/gdpr-banner` |
+
+**Apply** posts the values back through the drag-drop layer, which persists them into the page's session XML. React is not involved in that round-trip; the plugin UI is entirely legacy PHP/JS inside the Edition iframe.
+
 ## Key services
 
 | Service alias | Role |
 | --- | --- |
 | `MelisFrontHead` | Manages page `<title>`, meta description, canonical and injects plugin CSS/JS assets. |
-| `MelisSiteConfigService` | Reads per-site configuration by key, page or language — supports file + DB merge. |
+| `MelisSiteConfigService` | Reads per-site configuration by key, page or language — file + DB merge. |
 | `MelisSiteTranslationService` | Per-site translation key/text lookup and CRUD, cached per site. |
 | `MelisTranslationService` | Module/locale translations (back-office strings), cached. |
 | `MinifyAssets` | Builds `bundle.css` / `bundle.js` per site using `matthiasmullie/minify`. |
 | `MelisFrontNavigation` | Navigation factory that builds a `Laminas\Navigation` tree from the engine page tree. |
 
-## Front office
+## Front rendering
 
 ### Routing
 
-The main front route is a Regex pattern matching `.../id/{idpage}` — dispatched to `MelisFront\Controller\Index::index`. Two child routes extend it:
-
-- `/renderMode/melis` — back-office edit mode (used by MelisCms to render a page for editing).
-- `/preview` — preview of the *saved* version (`renderMode: melis`, `preview: true`).
-
-Special routes: `sitemap(.xml)`, `/css/plugin-width.css`, `/melissearchindex/…`, `/melispluginrenderer` (AJAX single-plugin render), `/minify-assets`.
+The main front route is a Regex pattern matching `.../id/{idpage}`, dispatched to `MelisFront\Controller\Index::index`. Child routes: `/renderMode/melis` (back-office edit mode used by MelisCms) and `/preview` (preview of the saved version). Special routes: `sitemap(.xml)`, `/css/plugin-width.css`, `/melissearchindex/…`, `/melispluginrenderer` (AJAX single-plugin render), `/minify-assets`.
 
 ### Render pipeline (listeners)
 
@@ -48,13 +107,13 @@ Wired in `src/Module.php` across `EVENT_DISPATCH` and `EVENT_FINISH` (~19 listen
 
 | Phase | Listeners |
 | --- | --- |
-| `EVENT_LOAD_MODULES_POST` | `MelisFrontSEORouteListener` (SEO URL routes from DB), `MelisFrontSiteConfigListener`, `MelisFrontMiniTemplateConfigListener` |
+| `EVENT_LOAD_MODULES_POST` | `MelisFrontSEORouteListener`, `MelisFrontSiteConfigListener`, `MelisFrontMiniTemplateConfigListener` |
 | `EVENT_DISPATCH` | `MelisFrontXSSParameterListener`, `MelisFrontHomePageRoutingListener` / `…HomePageIdOverrideListener`, `MelisFrontSEODispatchRouterRegularUrlListener` (page validation, 404/301, fires `melisfront_site_dispatch_ready`), `MelisFront404To301Listener`, `MelisFront404CatcherListener` |
 | `EVENT_FINISH` | `MelisFrontPluginsToLayoutListener` (plugin CSS/JS), `MelisFrontSEOMetaPageListener` (title/description/canonical), `MelisFrontAttachCssListener` (page CSS), `MelisFrontLayoutListener` (front layout or BO layout + TinyMCE in `melis` mode), `MelisFrontPageCacheListener`, `MelisFrontMinifiedAssetsCheckerListener` |
 
 ### Templating plugins (controller plugins)
 
-All extend `MelisEngine\Controller\Plugin\MelisTemplatingPlugin`. Registered under `controller_plugins`:
+All extend `MelisEngine\Controller\Plugin\MelisTemplatingPlugin`, registered under `controller_plugins`. The blocks surfaced in the React editor are a subset of these:
 
 | Plugin alias | Block |
 | --- | --- |
@@ -71,6 +130,13 @@ All extend `MelisEngine\Controller\Plugin\MelisTemplatingPlugin`. Registered und
 | `MelisFrontGdprRevalidationPlugin` | Re-asks consent when the GDPR policy changes. |
 | `MelisFrontSearchResultsPlugin` | Renders internal site-search results. |
 | `MiniTemplatePlugin` | Inserts a pre-built mini-template in one click. |
+
+### The plugin renderer controller
+
+`MelisFront\Controller\MelisPluginRendererController` re-renders a single plugin on demand — this is what the Edition iframe calls when you drop or edit a block:
+
+- `getPluginAction()` (route `/melispluginrenderer`) — AJAX render of one plugin.
+- `editPluginAction`, `dndLayoutAction`, `dndUpdateOrderAction`, `dndRemoveAction` — the drag-drop and plugin-edition flows.
 
 ### View helpers
 
@@ -135,11 +201,12 @@ $sharedEvents->attach('MelisFront', 'melisfront_site_dispatch_ready', function (
 | --- | --- |
 | Module bootstrap + listener wiring | `vendor/melisplatform/melis-front/src/Module.php` |
 | Routes, services, plugins, helpers, caches | `vendor/melisplatform/melis-front/config/module.config.php` |
+| Plugin config (front defaults + `melis.modal_form`) | `vendor/melisplatform/melis-front/config/plugins/` |
 | Render-pipeline listeners | `vendor/melisplatform/melis-front/src/Listener/` |
 | Services (Head, SiteConfig, Translations, Minify) | `vendor/melisplatform/melis-front/src/Service/` |
 | Templating plugins (content blocks) | `vendor/melisplatform/melis-front/src/Controller/Plugin/` |
+| Plugin renderer controller | `vendor/melisplatform/melis-front/src/Controller/MelisPluginRendererController.php` |
 | View helpers | `vendor/melisplatform/melis-front/src/View/Helper/` |
 | Navigation factory | `vendor/melisplatform/melis-front/src/Navigation/Factory/` |
-| Front controllers | `vendor/melisplatform/melis-front/src/Controller/` |
 
 See also: [melis-engine](/reference/modules/melis-engine), [melis-cms](/reference/modules/melis-cms), [melis-core](/reference/modules/melis-core)

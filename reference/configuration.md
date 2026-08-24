@@ -100,6 +100,56 @@ and per-key TTLs. The Laminas **config cache** is governed by `config_cache_enab
 `application.config.php` (off by default in this skeleton). See
 [Troubleshooting](../guide/troubleshooting#cache) for clearing caches.
 
+## React back-office configuration
+
+The v6 React back-office (`/melis-react`) runs on the **same framework and the same config
+tree** as the classic back-office (`/melis`) — everything above still applies. Two additional
+infrastructure modules wire it up. Both are loaded through `config/application.config.php`
+(`module_paths` / `modules`, not composer autoload) and neither has any project-level config
+to edit: enabling the React BO is a matter of loading these modules.
+
+| Module | Role |
+| --- | --- |
+| `MelisReactApi` | The JSON API backbone. Declares the generic `/melis/react-api/…` endpoints (in its own `config/module.config.php`) and hosts the capability resolver. Draws no UI. |
+| `MelisReactOverride` | Serves the React shell and renders legacy tools as iframes. Overrides MelisCore's `PluginView` controller and declares the shell/tool routes. |
+
+### Serving the shell
+
+The React SPA is served by `MelisReactOverride`'s `SpaController` at **`/melis-react`** and
+every deep link under it (regex route `meliscore-melis-react-spa`, `priority => 1000`). The
+shell's `index.html` is read from **melis-core's** `public/ui-react/index.html`, served at
+`/MelisCore/ui-react/` — so the React build lives with `melis-core`, not in these modules.
+
+Because the React app handles its own authentication, `MelisReactOverride` appends a few
+routes to MelisCore's `plugins.meliscore.datas.excluded_routes` (public, no login redirect):
+the SPA route itself, `melis-backoffice/react-platform-bundle`, and the two read-only boot
+endpoints `melis-backoffice/melis-react-api/platformscheme-react-get` and
+`melis-backoffice/melis-react-api/langs`.
+
+### Brick / module discovery
+
+The shell discovers tools at boot via **`GET /melis/react-api/react-modules`**, which scans
+**active** modules for a `public/ui-react/brick.manifest.json` (a single object or a
+`bricks: [...]` array) and returns the brick definitions plus a single concatenated bundle
+URL (`GET /melis/react-api/bricks-bundle.js`). A brick therefore appears **if and only if its
+module is active** — that is the modularity rule; there is no separate registry to maintain.
+A module that ships a React tool provides it as a brick under its own `public/ui-react/`.
+
+### Per-module React config keys
+
+Individual tool modules (not these two infrastructure modules) may declare React config,
+merged into the config tree via their `Module::getConfig()`:
+
+| File / key | Declares |
+| --- | --- |
+| `config/react-api.php` | A tool module's own `/melis/react-api/…` data routes (e.g. `users`, `roles` live in MelisCore / MelisSmallBusiness — **not** in MelisReactApi). |
+| `config/react.capabilities.php` (`melisReactToolCapabilities`) | The fine-grained "advanced rights" (`list` / `create` / `edit` / `delete`, or a nested `{ actions, tabs }` tree) that exist per tool `melisKey`. Default is **allow**; denials are stored in a dedicated `<meliscore_tool_capabilities>` section of the user/role rights XML. |
+| `melis_react_override.toolpage_extensions[]` | Service names implementing `PluginViewToolPageExtensionInterface` — a module's per-tool quirks (HTML/asset adjustments) for legacy tools shown in the React shell. Contributions accumulate regardless of load order. |
+
+The infrastructure modules themselves declare **none** of these keys: `MelisReactApi` is the
+engine that *reads* other modules' capability declarations, and `MelisReactOverride` ships no
+brick, no `react-api.php` and no `react.capabilities.php`.
+
 ## Where to look
 
 | Concern | Path |
@@ -109,3 +159,6 @@ and per-key TTLs. The Laminas **config cache** is governed by `config_cache_enab
 | Config service | `vendor/melisplatform/melis-core/src/Service/MelisCoreConfigService.php` |
 | Cache config | `vendor/melisplatform/melis-core/config/module.config.php` (`caches`) |
 | Asset manager | `vendor/melisplatform/melis-asset-manager/` |
+| React API routes / capability resolver | `vendor/melisplatform/melis-react-api/` |
+| React shell + legacy-tool iframe / SPA route | `vendor/melisplatform/melis-react-override/` |
+| React shell build (`index.html`, bricks) | `vendor/melisplatform/melis-core/public/ui-react/` |

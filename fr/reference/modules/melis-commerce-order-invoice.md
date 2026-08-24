@@ -1,17 +1,16 @@
 # MelisCommerceOrderInvoice
 
-> Ajoute la génération de factures PDF de commandes à MelisCommerce.
-> Paquet : `melisplatform/melis-commerce-order-invoice`.
+> Ajoute la génération de factures PDF de commandes à MelisCommerce, exposée dans l'outil Commandes React. Paquet `melisplatform/melis-commerce-order-invoice`.
 
 ## Objectif
 
 `MelisCommerceOrderInvoice` étend [MelisCommerce](/fr/guide/commerce) avec la facturation des
 commandes. Lorsqu'une commande est validée, il génère automatiquement une facture PDF (via
-`spipu/html2pdf`) et la stocke en base de données. Dans le backoffice, il ajoute un onglet
-**Factures** à l'intérieur de l'outil *Commandes* de MelisCommerce : les factures de chaque
-commande y sont listées, régénérables et téléchargeables ; la liste des commandes reçoit également
-une action *export PDF*. Le modèle de facture est une vue `.phtml`, entièrement surchargeable par
-locale.
+`spipu/html2pdf`) et la stocke en base de données. Il ne fournit **aucun outil propre** : dans le
+back-office React (`/melis-react`), il injecte deux éléments dans l'outil **MelisCommerce →
+Commandes** — un onglet **Factures** dans l'éditeur de commande (liste, régénération,
+téléchargement) et un petit bouton de **téléchargement** sur chaque ligne de la liste des commandes.
+Le modèle de facture est une vue `.phtml`, entièrement surchargeable par locale.
 
 ## Activation
 
@@ -23,9 +22,73 @@ C'est un module Laminas standard. Ajoutez-le dans `config/melis.module.load.php`
 'MelisCommerceOrderInvoice',
 ```
 
-Dépendances (depuis `composer.json`) : `melisplatform/melis-commerce` (`^5.2`) et
-`spipu/html2pdf` (`^5.2`) ; PHP `^8.1|^8.3`. Le module est compatible `dbdeploy` : sa table est donc
-créée via le delta dbdeploy à l'installation.
+Dépendances (depuis `composer.json`) : `melisplatform/melis-commerce` et `spipu/html2pdf`. Le module
+est compatible `dbdeploy` : sa table est donc créée via le delta dbdeploy à l'installation.
+
+## Back-office React
+
+La brique de ce module est une **brique d'extension / d'injection dans l'hôte** : elle ne dessine ni
+page, ni route, ni entrée de menu latéral. Son `brick.manifest.json` fixe `route`, `label`,
+`forwardKey` et `melisKey` tous à `null` (seul `entry: "brick.js"` est réel ; id de brique
+`commerce-order-invoice`). Au chargement, `brick.tsx` publie deux composants React sur un global
+`window` au lieu d'appeler `__melisRegisterBrick` :
+
+```ts
+window.MelisCommerceOrderInvoiceBrick = { OrderRowButton, InvoicesTab }
+```
+
+L'outil Commandes de MelisCommerce les consomme **uniquement si ce module est actif** — il interroge
+`window.MelisCommerceOrderInvoiceBrick` via son hook `useExternalBrickComponent(globalName, key)` et
+n'affiche rien si le global n'est jamais défini. Les deux composants prennent une unique prop
+`{ orderId: number }` et lisent `document.documentElement.lang` pour les libellés FR/EN.
+
+| Composant (`ui-react/src/`) | Où il apparaît | Comportement |
+| --- | --- | --- |
+| `OrderRowButton` | Liste des commandes — par ligne de commande | Récupère l'id de la dernière facture de la commande ; télécharge son PDF, ou affiche une alerte *« No invoice available »* si aucune. |
+| `InvoicesTab` | Éditeur de commande — onglet **Factures** (commande existante uniquement) | Liste les factures (**ID**, **Date**), propose **Regenerate Invoice** et un **téléchargement** par ligne. |
+
+La brique est un bundle Vite IIFE (`ui-react/vite.config.ts`, nom `MelisCommerceOrderInvoiceBrickBundle`)
+construit dans `public/ui-react/brick.js` ; React et react-router sont externalisés vers les globals
+de l'hôte, si bien que la brique réutilise l'instance React de l'hôte.
+
+## Points d'accès appelés par la brique
+
+La brique n'a **pas de `config/react-api.php`** — son client (`invoiceApi.ts`) rejoue les actions
+**MVC historiques** du module lui-même avec `credentials: 'same-origin'`, toutes sous une même base :
+
+```ts
+export const INVOICE_BASE = '/melis/MelisCommerceOrderInvoice/MelisCommerceOrderInvoice'
+```
+
+| Appel | Action du contrôleur | Renvoie |
+| --- | --- | --- |
+| `POST {INVOICE_BASE}/getOrderLatestInvoiceId` (`orderId`) | `getOrderLatestInvoiceIdAction` | JSON `{ latestInvoiceId }` (0 si aucune) |
+| `POST {INVOICE_BASE}/getOrderInvoice` (`invoiceId`) | `getOrderInvoiceAction` | Octets du PDF + un en-tête de réponse `fileName` |
+| `POST {INVOICE_BASE}/getOrderInvoiceList` (`draw,start,length,orderId`) | `getOrderInvoiceListAction` | JSON DataTables `{ data: [{ ordin_id, ordin_date_generated }] }` |
+| `POST {INVOICE_BASE}/generateOrderInvoice` (`orderId`) | `generateOrderInvoiceAction` | JSON `{ id }` (l'id de la nouvelle facture) |
+
+Ces actions renvoient du JSON/binaire historique brut, et **non** l'enveloppe react-api
+`{ success, data, error }` : le client les normalise donc (`fetchOrderInvoiceList` mappe
+`ordin_id`/`ordin_date_generated` ; `downloadInvoiceFile` lit l'en-tête `fileName`). Côté serveur,
+les actions délèguent à `MelisCommerceOrderInvoiceService`, en appelant
+`generateOrderInvoice($orderId, 'orderinvoicetemplate/default')` pour une régénération. Le module
+déclare aussi deux routes littérales supplémentaires
+(`/CommerceOrderInvoice/getOrderLatestInvoiceId`, `/CommerceOrderInvoice/getInvoice`), mais la brique
+React utilise la route à segments ci-dessus.
+
+## Capacités et contrôle d'accès
+
+Ce module ne comporte **pas de `config/react.capabilities.php`**. Le contrôle d'accès est à deux
+niveaux :
+
+- **Visibilité de l'interface** — l'hôte n'affiche le bouton de ligne et l'onglet que si la brique
+  est chargée ; l'onglet **Factures** est en outre filtré par la propre capacité `invoices` de
+  MelisCommerce dans son arbre de capacités `meliscommerce_order_list_page`.
+- **Accès à l'API** — seule l'action de téléchargement du PDF impose un droit côté serveur :
+  `getOrderInvoiceAction` vérifie `canAccess('meliscommerce_orders_content_tab_order_invoice')` et
+  renvoie un 403 sinon. Les actions liste/dernière/génération ne requièrent qu'une session BO :
+  considérez donc la visibilité de l'onglet/du bouton comme une indication d'interface plutôt que
+  comme une véritable frontière d'autorisation.
 
 ## Services clés
 
@@ -41,7 +104,7 @@ Méthodes notables de `MelisCommerceOrderInvoiceService` :
 | Méthode | Rôle |
 | --- | --- |
 | `generateOrderInvoice($orderId, $template)` | Construit le PDF d'une commande et l'enregistre ; renvoie le nouvel id de facture. |
-| `getOrderInvoiceList($orderId, $start, $limit, $order)` | Liste les factures d'une commande (une seule en front, toutes en back). |
+| `getOrderInvoiceList($orderId, $start, $limit, $order)` | Liste les factures d'une commande. |
 | `getOrderLatestInvoiceId($orderId)` | Id de la dernière facture d'une commande, ou `0` si aucune. |
 | `getInvoice($invoiceId)` | La ligne de facture par id. |
 | `getOrderInvoice($invoiceId)` | Le blob PDF brut (`ordin_invoice_pdf`) d'une facture. |
@@ -52,34 +115,6 @@ PDF émet aussi `meliscommerceorderinvoice_pdf_view`, ce qui permet de surcharge
 le rendu. Le suffixe du nom de fichier provient de
 `plugins.meliscommerceorderinvoice.data.custom-pdf-file-name` (défaut `invoice`) dans
 `config/app.interface.php`.
-
-## Backoffice
-
-Le module ne déclare pas d'outil de premier niveau propre ; il se greffe sur l'outil *Commandes* de
-MelisCommerce via `config/app.interface.php` et `config/app.tools.php` :
-
-- **Onglet Factures** sur une commande — clé d'interface
-  `meliscommerce_orders_content_tab_order_invoice` et clé de contenu
-  `meliscommerce_orders_content_tabs_content_order_invoice`. L'onglet contient une action
-  *Regenerate Invoice* et la table de liste des factures.
-- **Table de liste des factures** (clé `meliscommerce_order_invoice_list`), alimentée par
-  `MelisCommerceOrderInvoice/MelisCommerceOrderInvoice/getOrderInvoiceList`, avec les colonnes
-  `ordin_id` et `ordin_date_generated` et un bouton d'action `export-pdf`.
-- **Export PDF** : bouton d'action ajouté à la table standard `meliscommerce_order_list`.
-
-Contrôleur : `MelisCommerceOrderInvoice\Controller\MelisCommerceOrderInvoiceController`
-(id invokable `MelisCommerceOrderInvoice\Controller\MelisCommerceOrderInvoice`). Actions clés :
-`generateOrderInvoiceAction`, `getOrderInvoiceListAction`, `getOrderInvoiceAction` (téléchargement),
-`getOrderLatestInvoiceIdAction`, et les actions de fragments d'interface `render-*` référencées par
-la config d'interface. Voir [Référence des modules](/fr/reference/modules) et
-[Créer un outil](/fr/guide/create-a-tool).
-
-Deux routes hors backoffice exposent les factures au téléchargement :
-
-| Route | Action |
-| --- | --- |
-| `/CommerceOrderInvoice/getOrderLatestInvoiceId` | `getOrderLatestInvoiceId` |
-| `/CommerceOrderInvoice/getInvoice` | `getOrderInvoice` |
 
 ## Écouteurs (intégration)
 
@@ -121,10 +156,12 @@ $pdf      = $invoiceSvc->getOrderInvoice($latestId);   // contenu binaire du PDF
 
 | Sujet | Chemin |
 | --- | --- |
-| Service de facturation | `vendor/melisplatform/melis-commerce-order-invoice/src/Service/MelisCommerceOrderInvoiceService.php` |
-| Passerelle de table | `vendor/melisplatform/melis-commerce-order-invoice/src/Model/Tables/MelisCommerceOrderInvoiceTable.php` |
-| Contrôleur | `vendor/melisplatform/melis-commerce-order-invoice/src/Controller/MelisCommerceOrderInvoiceController.php` |
-| Écouteurs | `vendor/melisplatform/melis-commerce-order-invoice/src/Listener/` |
-| Module / config | `vendor/melisplatform/melis-commerce-order-invoice/src/Module.php`, `config/module.config.php`, `config/app.interface.php`, `config/app.tools.php` |
-| Modèle de facture | `vendor/melisplatform/melis-commerce-order-invoice/view/melis-commerce-order-invoice/melis-commerce-order-invoice/default-order-invoice-template.phtml` |
-| Structure BDD | `vendor/melisplatform/melis-commerce-order-invoice/install/dbdeploy/021419_melis_commerce_order_invoice_structure.sql` |
+| Source de la brique React | `ui-react/src/{brick.tsx, OrderRowButton.tsx, InvoicesTab.tsx, invoiceApi.ts}` |
+| Build + manifeste de la brique | `public/ui-react/{brick.js, brick.manifest.json}` |
+| Service de facturation | `src/Service/MelisCommerceOrderInvoiceService.php` |
+| Passerelle de table | `src/Model/Tables/MelisCommerceOrderInvoiceTable.php` |
+| Contrôleur | `src/Controller/MelisCommerceOrderInvoiceController.php` |
+| Écouteurs | `src/Listener/` |
+| Module / config | `src/Module.php`, `config/module.config.php`, `config/app.interface.php`, `config/app.tools.php` |
+| Modèle de facture | `view/melis-commerce-order-invoice/melis-commerce-order-invoice/default-order-invoice-template.phtml` |
+| Structure BDD | `install/dbdeploy/021419_melis_commerce_order_invoice_structure.sql` |

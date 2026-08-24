@@ -1,9 +1,18 @@
 # MCP (Model Context Protocol)
 
 Melis intègre le **[Model Context Protocol](https://modelcontextprotocol.io/)** pour que les
-[agents](./ai) IA puissent appeler des **outils** — lire/écrire des fichiers, faire des opérations
-base de données, scaffolder des modules — pendant une exécution. Cette page explique le
+[agents](/fr/guide/ai) IA puissent appeler des **outils** — lire/écrire des fichiers, faire des
+opérations base de données, scaffolder des modules — pendant une exécution. Cette page explique le
 fonctionnement et comment ajouter votre propre outil MCP.
+
+::: info Même moteur, nouveau back-office
+Melis v6 a conservé le moteur IA et ses modules à l'identique ; il a remplacé le back-office par une
+**UI React à `/melis-react`**. Tout ce que décrit cette page sur le fonctionnement de MCP — le
+client, la config `mcp.tools.php`, le lancement des serveurs via stdio, la sécurité — est identique à
+la v5. Seuls les emplacements *où vous cliquez* ont migré vers les nouveaux outils React (**Melis AI
+→ Admin → MCP Server**, la liste d'autorisation **AI Tools** de l'agent et le **MCP Inspector**). Ces
+points sont signalés ci-dessous.
+:::
 
 ::: info Client, pas serveur (aujourd'hui)
 Melis agit comme **client MCP** : il lance des **serveurs** MCP locaux (processus PHP, transport
@@ -129,17 +138,45 @@ Le moteur gère pour vous le lancement du processus, le JSON-RPC sur stdio, les 
 et le circuit-breaking. Les modèles qui supportent l'appel d'outils peuvent alors invoquer votre
 outil pendant l'exécution d'un agent.
 
-## Inspecter les serveurs MCP
+## Autoriser un outil sur un agent (React)
 
-Le backoffice fournit un **MCP Inspector** (sous *Melis AI*) — contrôleur
-`vendor/melisplatform/melis-ai/src/Controller/McpInspectorController.php` — qui lance l'UI officielle
-MCP Inspector sur un serveur choisi pour parcourir et tester ses outils.
+Déclarer un outil le rend *disponible* ; un [agent](/fr/guide/ai) ne voit jamais que les outils que
+vous cochez pour lui. Dans le back-office React, ouvrez **Melis AI → AI Agents**, ouvrez (ou créez)
+un agent, et allez dans l'onglet **AI Tools** — une liste de cases à cocher répartie entre **MCP
+tools** (servis par des serveurs MCP) et **Local tools** (PHP intégré). Cochez ceux que cet agent
+peut appeler, et le moteur proposera exactement ceux-là au modèle à chaque exécution. Les outils MCP
+base de données respectent également les droits lecture/écriture/suppression par table définis dans
+l'onglet **DB Rights** de l'agent.
+
+![Liste d'autorisation AI Tools de l'agent](/screenshots/react/melis-ai/melisai-tool-aiagents-tab-aiagents-edit-tab-aitools.png)
+*Melis AI → AI Agents → un agent → AI Tools : les MCP tools (getTableStructure, createDatabaseTable, selectData, insertData…) et Local tools qu'un agent peut appeler.*
+
+Vous configurez les fonctions que le serveur MCP intégré *expose* sous **Melis AI → Admin → MCP
+Server** (le sous-onglet **MCP Exposition**) ; seuls les outils cochés sont rendus disponibles.
+Consultez le [guide IA](/fr/guide/ai) pour le modèle complet agent/instance et la
+[référence `melis-ai`](/fr/reference/modules/melis-ai) pour les outils et endpoints.
+
+## Inspecter les serveurs MCP (MCP Inspector)
+
+Le back-office React fournit un outil **MCP Inspector** sous **Melis AI → MCP Inspector** (route
+`/melis-ai/mcp-inspector`). Il liste les serveurs MCP connectés et permet de **lancer / vérifier
+l'état / lire les logs**, afin de confirmer qu'un serveur est actif et que les outils attendus sont
+découvrables *avant* de les autoriser sur un agent. Comme tout outil React, il porte un bouton
+**New / Old** (**New** = la page React ; **Old** = l'outil classique dans une iframe), qui lance l'UI
+officielle MCP Inspector contre un serveur choisi via
+`vendor/melisplatform/melis-ai/src/Controller/McpInspectorController.php`.
+
+Les endpoints React de l'Inspector (`servers`, `launch`, `status`, `log`) vivent dans
+`MelisReactApiMcpInspectorController` — voir la [référence `melis-ai`](/fr/reference/modules/melis-ai).
 
 ## Sécurité
 
 Les opérations MCP fichiers/DB sont sandboxées via `allowed_paths` / `forbidden_paths` configurés
 dans `melis-ai-engine/config/app.interface.php` (p. ex. `module`, `public`, `config`, `/tmp`
 autorisés ; `/etc`, `/bin`, `/root`… interdits). Vérifiez-les avant d'activer des outils en écriture.
+Au-delà du sandbox, la portée d'un agent est bornée par sa liste d'autorisation **AI Tools** et ses
+**DB Rights** (ci-dessus), de sorte qu'un modèle ne peut toucher que ce que vous avez explicitement
+accordé.
 
 ## Fichiers clés
 
@@ -150,4 +187,5 @@ autorisés ; `/etc`, `/bin`, `/root`… interdits). Vérifiez-les avant d'active
 | Config des serveurs | `vendor/melisplatform/melis-ai-engine/config/app.interface.php` |
 | Exemple `mcp.tools.php` | `vendor/melisplatform/melis-ai-tool-creator/config/mcp.tools.php` |
 | Exemple de serveur | `vendor/melisplatform/melis-ai/mcp/dbmcp/bin/server.php` |
-| Inspector | `vendor/melisplatform/melis-ai/src/Controller/McpInspectorController.php` |
+| Inspector (classique) | `vendor/melisplatform/melis-ai/src/Controller/McpInspectorController.php` |
+| Inspector (API React) | `vendor/melisplatform/melis-ai/src/Controller/React/MelisReactApiMcpInspectorController.php` |

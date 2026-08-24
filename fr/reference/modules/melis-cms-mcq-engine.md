@@ -1,20 +1,34 @@
 # MelisCmsMcqEngine
 
-> Données, services, instantanés XML, évaluation et rendu front-office du système de QCM (quiz).
-> Package `melisplatform/melis-cms-mcq-engine`.
+> Données, services, instantanés XML, notation et rendu front-office du quiz pour le système de QCM — le backend derrière l'outil React MCQ. Package `melisplatform/melis-cms-mcq-engine`.
 
 ## Présentation
 
 MelisCmsMcqEngine est la **couche données et services** du système de QCM : il possède les tables de
 base de données, les services pour les questions, réponses, QCM, groupes et catégories,
 l'**instantané XML** qui fige chaque test assemblé, le sélecteur de questions par **modèle
-aléatoire**, l'évaluation **score / taux de réussite**, ainsi que le **rendu front-office du quiz**.
-L'interface back-office qui le pilote est **MelisCmsMcq** — le moteur lui-même n'a pas d'écrans
-propres. On peut le comparer au duo MelisEngine ↔ MelisCms, mais pour les quiz.
+aléatoire**, l'évaluation **notation / taux de réussite** des réponses, ainsi que le **rendu
+front-office du quiz**. On peut le comparer au duo MelisEngine ↔ MelisCms, mais pour les quiz.
 
 Le test assemblé est stocké sous forme de `mcq_xml` afin que le rendu et la notation lisent un
 instantané autonome, et non une jointure en direct, préservant ainsi le QCM exact qu'un utilisateur
 a constitué même si les questions sous-jacentes sont modifiées ultérieurement.
+
+## Pas de brique React — exposé via MelisCmsMcq
+
+Ce moteur n'a **aucune interface back-office propre** — ni legacy, ni React. Il ne livre **aucun**
+`brick.manifest.json`, **aucun** projet `ui-react/`, **aucun** `config/react-api.php` et **aucun**
+`config/react.capabilities.php`. Il **n'est pas** listé par `GET /melis/react-api/react-modules`,
+n'apparaît dans aucun menu React et ne contribue à aucun nœud de capacité.
+
+Dans `/melis-react`, la fonctionnalité QCM vit entièrement dans l'outil **MelisCmsMcq** (barre
+latérale → **MelisCms → MCQ** ; brique `cms-mcq`, route `/melis-cms/mcq`, `melisKey`
+`meliscmsmcq_tool`). Les contrôleurs `react-api` de cet outil résolvent **les services de ce moteur**
+et leur délèguent toute la logique métier — les mêmes services que ceux qu'utilisait l'outil legacy.
+Le chemin React → `react-api` → **service du moteur** remplace simplement le chemin legacy
+jQuery/AJAX → contrôleur → **service du moteur** ; il n'existe aucun code moteur spécifique à React.
+Les droits d'accès et les capacités de droits avancés vivent tous sur le nœud **MelisCmsMcq**
+(`meliscmsmcq_tool`), et non ici — le `rightsDisplay` du moteur vaut `'none'`.
 
 ## Activation
 
@@ -35,15 +49,16 @@ donc créées/mises à jour automatiquement. Chaîne d'installation : `melis-cms
 ## Services principaux
 
 Tous les services étendent le service générique de MelisCore et déclenchent des événements
-`*_start` / `*_end`. Les alias sont enregistrés dans `config/module.config.php`.
+`*_start` / `*_end`. Les alias sont enregistrés dans `config/module.config.php` et constituent les
+points d'entrée exacts que résolvent les contrôleurs React de MelisCmsMcq.
 
-| Alias de service | Rôle |
-| --- | --- |
-| `MelisCmsMcqService` | QCM : enregistrer, supprimer, lister, générer/récupérer le XML du QCM, mélanger l'ordre, évaluer les réponses (notation). |
-| `MelisCmsMcqQuestionsService` | Questions : CRUD, génération XML, panier, sélecteur par modèle aléatoire. |
-| `MelisCmsMcqAnswersService` | Réponses : CRUD, vérification de la bonne réponse, nombre de réponses par question. |
-| `MelisCmsMcqGroupsService` | Groupes de QCM : CRUD, assemblage groupes+questions pour un QCM, désactivation des QCM liés. |
-| `MelisCmsMcqQuestionCategoryService` | Catégories de questions (table `melis_cms_mcq_question_groups`) : CRUD. |
+| Alias de service | Rôle | Consommé par (contrôleur React MelisCmsMcq) |
+| --- | --- | --- |
+| `MelisCmsMcqService` | QCM : enregistrer, supprimer, lister, générer/récupérer le XML du QCM, mélanger l'ordre, évaluer les réponses (notation). | `MelisReactApiMcqController` |
+| `MelisCmsMcqQuestionsService` | Questions : CRUD, génération XML, panier, sélecteur par modèle aléatoire. | `MelisReactApiMcqQuestionController` |
+| `MelisCmsMcqAnswersService` | Réponses : CRUD, vérification de la bonne réponse, nombre de réponses par question. | `MelisReactApiMcqQuestionController` |
+| `MelisCmsMcqGroupsService` | Groupes de QCM : CRUD, assemblage groupes+questions pour un QCM, désactivation des QCM liés. | `MelisReactApiMcqGroupController` |
+| `MelisCmsMcqQuestionCategoryService` | Catégories de questions (table `melis_cms_mcq_question_groups`) : CRUD. | `MelisReactApiMcqCategoryController` |
 
 ### Méthodes sélectionnées
 
@@ -54,6 +69,7 @@ Tous les services étendent le service générique de MelisCore et déclenchent 
 | `getMcq($mcqId)` | Retourne le XML du QCM assemblé ; mélange l'ordre des questions si `mcq_random_order` est activé. |
 | `generateMcqXml($mcqProperties, $mcqTrans, $groupsData)` | Construit le XML complet du test à partir des groupes et questions, et le stocke dans `mcq_xml`. |
 | `evaluateAnswers($mcqXml, $userAnswers, $passingPercentage)` | Note une soumission de type QCM ; ignore les questions ouvertes ; retourne le score et la réussite/échec. |
+| `xmlToArray($mcqXml)` | Analyse l'instantané figé `mcq_xml` en tableau (utilisé par la prévisualisation React). |
 | `getMcqList` / `saveMcqItem` / `deleteMcqById` | Liste / enregistrement / suppression standard. |
 
 **`MelisCmsMcqQuestionsService`**
@@ -66,6 +82,32 @@ Tous les services étendent le service générique de MelisCore et déclenchent 
 | `generateRandomQuestions($userId, $difficultyId, $categoryId, $tags, $numberOfQuestions, $langId, $alreadySelected)` | Sélecteur aléatoire de niveau supérieur avec liste d'exclusion. |
 | `getQuestionsBasketList` / `processBasketQuestions` | Gère le panier de questions par utilisateur. |
 
+## Comment l'outil React MCQ utilise ce moteur
+
+Les contrôleurs React du QCM font transiter le JSON en entrée/sortie et délèguent toute la logique
+au moteur. Les principaux points de contact côté serveur (depuis
+`melis-cms-mcq/src/Controller/MelisReactApi*Controller.php`) :
+
+```php
+// POST /melis/react-api/mcq/save  → MelisReactApiMcqController::saveAction()
+$mcqService = $this->getServiceManager()->get('MelisCmsMcqService');
+$mcqXml = $mcqService->generateMcqXml($mcqProperties, $mcqTrans, $groupsData); // engine assembles snapshot
+
+// POST /melis/react-api/mcq/evaluate  → evaluateAction()
+$result = $mcqService->evaluateAnswers($xml, $answers, $passing);              // engine scores; React displays
+
+// GET  /melis/react-api/mcq/:id/preview  → previewAction()
+$xml    = $mcqService->getMcq($id);            // frozen test XML (shuffled if mcq_random_order)
+$parsed = (array) $mcqService->xmlToArray($xml);
+
+// POST /melis/react-api/mcq-questions/random  → MelisReactApiMcqQuestionController::randomAction()
+$ids = $questionService->getRandomQuestionIds($difficulty, $category, $tagId, $count, $exclude);
+```
+
+La **prévisualisation** React affiche directement le `mcq_xml` analysé (`getMcq` + `xmlToArray`) ;
+elle **n'appelle pas** le view helper `renderMcqQuestions` du moteur — ce helper est uniquement le
+rendu front-office / site web, et il est inchangé par le back-office React.
+
 ## Front office
 
 | Élément | Rôle |
@@ -74,8 +116,14 @@ Tous les services étendent le service générique de MelisCore et déclenchent 
 | Template par défaut | `view/templates/default-preview-template.phtml` |
 | Factory d'élément de formulaire `McqPreviewTemplatesSelect` | Alimente un select avec les templates enregistrés sous `mcq_preview_templates` dans `app.interface.php`. |
 
-Autres factories d'éléments de formulaire utilisées par le back-office : `McqQuestionCategoriesSelect`,
-`McqQuestionsDifficultySelect`, `QuestionsTypesSelect`.
+Autres factories d'éléments de formulaire enregistrées par le moteur : `McqQuestionCategoriesSelect`,
+`McqQuestionsDifficultySelect`, `QuestionsTypesSelect`. L'outil React construit ses propres
+références JSON (types, difficultés, catégories) plutôt que d'afficher ces éléments select Laminas,
+mais les données sous-jacentes du moteur (types 1=QCM / 2=Question ouverte, difficultés
+Facile/Moyen/Difficile, catégories) sont identiques. Le `app.interface.php` du moteur enregistre
+toujours le plugin `meliscmsmcqengine` avec ses `datas` (`mcq_groups.default_group_lists`,
+`mcq_preview_templates`) — des valeurs par défaut que l'outil QCM respecte quel que soit le
+front-end.
 
 ## Tables de base de données
 
@@ -106,31 +154,25 @@ Autres factories d'éléments de formulaire utilisées par le back-office : `Mcq
 ```php
 $sm = $this->getServiceLocator();
 
-// --- Récupérer et afficher un quiz ---
+// --- Fetch and render a quiz on a website ---
 $mcqSvc = $sm->get('MelisCmsMcqService');
-$mcqXml = $mcqSvc->getMcq($mcqId); // mélange si mcq_random_order est activé
+$mcqXml = $mcqSvc->getMcq($mcqId); // shuffles if mcq_random_order is set
 
-// Dans un template phtml :
+// In a phtml template:
 echo $this->renderMcqQuestions(
     'MelisCmsMcqEngine/default-template',
     $mcqXml,
     $langId
 );
 
-// --- Noter une soumission ---
+// --- Score a submission ---
 $result = $mcqSvc->evaluateAnswers($mcqXml, $userAnswers, 50);
-// $result['global'] => ['score', 'pass', 'total', 'checked', 'skipped']
-// $result['details'] => résultat par question
+// $result['global']  => ['score', 'pass', 'total', 'checked', 'skipped']
+// $result['details'] => per-question outcome
 
-// --- Modèle aléatoire : sélection automatique de N questions ---
+// --- Random model: auto-select N questions ---
 $qSvc = $sm->get('MelisCmsMcqQuestionsService');
-$ids  = $qSvc->getRandomQuestionIds(
-    $difficultyId,
-    $categoryId,
-    $tagId,
-    $numberOfQuestions,
-    $excludedIds
-);
+$ids  = $qSvc->getRandomQuestionIds($difficultyId, $categoryId, $tagId, $numberOfQuestions, $excludedIds);
 ```
 
 ## Fichiers clés
@@ -150,5 +192,5 @@ $ids  = $qSvc->getRandomQuestionIds(
 | Template front par défaut | `vendor/melisplatform/melis-cms-mcq-engine/view/templates/default-preview-template.phtml` |
 | Installation DB + migrations | `vendor/melisplatform/melis-cms-mcq-engine/install/dbdeploy/` |
 
-Voir aussi : [Référence des modules](/reference/modules) · [MelisCmsMcq](/reference/modules/melis-cms-mcq) ·
-[MelisCms](/reference/modules/melis-cms)
+Voir aussi : [Référence des modules](/fr/reference/modules) · [MelisCmsMcq](/fr/reference/modules/melis-cms-mcq) ·
+[MelisCms](/fr/reference/modules/melis-cms)

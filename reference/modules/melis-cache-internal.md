@@ -23,8 +23,9 @@ return [
 ];
 ```
 
-Requires `melisplatform/melis-cms` (`^5.2`) and PHP `^8.1|^8.3`. The module ships database
-migrations (`dbdeploy: true`) that must be applied on first install.
+Requires `melisplatform/melis-cms`. The module ships database migrations (`dbdeploy: true`) that must
+be applied on first install. In the v6 back-office the tool appears only when the module is
+activated — the React host discovers it through its `brick.manifest.json` (see [React back-office](#react-back-office)).
 
 ## Key services
 
@@ -34,6 +35,10 @@ Registered under `service_manager` in `config/module.config.php`. Resolve with `
 | --- | --- |
 | `MelisCacheInternalService` | Full-page cache operations: `getCacheConfig()`, `getPageCacheByPageIdAndType($pageId, $uri, $methodType)`, `getPageCacheByUrl()`, `saveItem()`, `deleteCacheByPageId()`, `deleteCacheByUrl()`, `deleteCacheByPageIdOrByUrl()`, `deleteAllCache()`, `getMelisCacheSize()`, `hasCache()`. Fires `melis_cache_internal_*_start`/`_end` events. |
 | `PartialCachingService` | Partial/zone cache management: `getLists()`, `savePartialCaching()`, `deletePartialCaching()`, `getPartialCachingByCode()`, `searchPartialCachingByCode()`, and `processedZoneCaching($uri, $response, $pageId, $type)` — the zone-refresh engine that re-renders only expired zones on a cache hit. |
+
+The React back-office reuses these same services and tables, so the React path reproduces the exact
+legacy behaviour (config is a singleton upsert, exclusions are replaced in bulk, `deleteCacheByUrl`
+handles the `*` wildcard/REGEXP).
 
 ## Request cycle mechanism
 
@@ -71,19 +76,98 @@ A fully-cached page can keep individual plugins fresh at a shorter TTL:
 - A **main plugin** config (`melis_cache_partial_general_site_plugins`) is a site-wide base that
   propagates to all pages; `_exclusion` rows exclude a plugin from caching on a given page.
 
-## Backoffice
+## React back-office
 
-Located under **Left menu → MelisCms → Melis Cache** (`fa fa-bookmark`). The tool has four tabs:
+In v6 the tool ships as a **native full-React brick** — a single left-menu tool (**Melis Cache**)
+whose screens are **in-tool tabs**, not host sub-tabs. Find it under **Sidebar → MelisCms → Melis
+Cache** (`fa fa-bookmark`), mounted at `/melis-cms/cache-internal`. The header carries the *"Platform
+cache management"* subtitle, a **refresh** button that follows the active tab, a global **Save**
+button, and a **New / Old** toggle: *New* is the React UI (default); *Old* renders the classic tool
+in a persistent iframe (`/melis/react-tool-page?key=MelisCacheInternal_tool`).
 
-| Tab | melisKey | Content |
-| --- | --- | --- |
-| Properties | `MelisCacheInternal_content_main_tab` | Global config (activate toggle, TTL, GET/POST request types), current cache size, and the per-page exclusion tree. |
-| Partial Caching | `…_partial_caching_tab` | Manage partial cache codes (code, type, module/controller/action, lifetime). DataTable: `meliscacheinternal_partial_caching`. |
-| URL Parameters | `…_cache_url_parameters_tab` | Manage ignored query parameters. DataTable: `meliscacheinternal_cache_url_parameters`. |
-| Cache Clearing | `…_cache_clearing_tab` | Manual clear by URL and the clearing-logs audit table (kept 3 months). DataTable: `meliscacheinternal_cache_clearing_logs`. |
+The four tabs:
 
-Controllers: `MelisCacheInternalController`, `PartialCachingController`, `UrlParametersController`,
-`ClearingLogsController`, `MelisCachePageExclusionController`.
+| Tab | Content |
+| --- | --- |
+| **Properties** | Full cache size in DB, the *Activate the cache system* toggle, *cache time in seconds* (TTL), the GET/POST request-type checkboxes, and the page-exclusion tree (toggle GET/POST per page). Persisted by the global header **Save**. |
+| **Partial Caching** | CRUD list of partial-cache codes with KPI cards (Total / Manual / Plugin), search, column manager, Export and **+ Add**. Columns: Id, Partial Caching Code, Type, Module, Controller, Action, Cache lifetime in seconds, Methods. |
+| **URL Parameters** | CRUD list of query-parameter names ignored when keying the cache (Total KPI, search, Export, **+ Add**). Add e.g. `utm_source` so link variants share one cache entry. |
+| **Cache Clearing** | Clear-by-URL form (URL starting with `/`, `*` as a wildcard) plus the clearing-logs audit table (KPI cards Total / Today / Users; columns Id, URL Cleared, Date, User; offset pagination). Kept 3 months. |
+
+![Properties tab — full cache size in DB, the Activate the cache system toggle, cache time in seconds, GET/POST request-type checkboxes and the per-page exclusion tree with GET/POST pills](/screenshots/react/melis-cache-internal/meliscacheinternal-tool-cache-tab-properties.png)
+
+![Partial Caching tab — KPI cards (Total / Manual / Plugin), search, Columns manager, Export and + Add above the codes table (Id, Partial Caching Code, Type, Module, Controller, Action, Cache lifetime in seconds, Methods)](/screenshots/react/melis-cache-internal/meliscacheinternal-tool-cache-tab-partialcaching.png)
+
+![URL Parameters tab — the Total KPI, search, Export and + Add above the ignored query-parameter table (Id, Parameter), used to keep tracking params from fragmenting the cache](/screenshots/react/melis-cache-internal/meliscacheinternal-tool-cache-tab-urlparameters.png)
+
+![Cache Clearing tab — the clear-by-URL form (URL starting with /, * as a wildcard) with KPI cards (Total / Today / Users) and the clearing-logs audit table (Id, URL Cleared, Date, User) with pagination](/screenshots/react/melis-cache-internal/meliscacheinternal-tool-cache-tab-cacheclearing.png)
+
+Common tasks: turn caching on / set TTL → *Properties → Activate → cache time → tick GET/POST →
+Save*; stop a page being cached → *Properties → tick GET/POST for that page in the tree → Save*; add
+a partial rule → *Partial Caching → + Add*; ignore a tracking param → *URL Parameters → + Add*; clear
+a URL now → *Cache Clearing → type URL → Clear cache*.
+
+## React API
+
+The React UI talks to a JSON API served by **this module's own controllers** (sub-namespace
+`MelisCacheInternal\Controller\React`, registered in `config/module.config.php`) — **not**
+`melis-react-api`. Base path `/melis/MelisCacheInternal/react-api`. Every action extends
+`MelisAbstractActionController`, is keyed on `MELIS_KEY = 'MelisCacheInternal_tool'`, guards access
+via `denyUnlessAccess()` + `denyUnlessCan()`, and returns `{ success, data, error }`.
+
+| Method & URL (relative to base) | Purpose |
+| --- | --- |
+| `GET /config` | Settings + cache size + page exclusions |
+| `POST /config/save` | Save settings (singleton upsert) + bulk-replace page exclusions |
+| `POST /config/empty-cache` | Empty the whole cache |
+| `POST /config/clear-cache` | Clear by URL pattern (no log) |
+| `GET /page-tree?nodeId=` | Lazy page tree for exclusions (`nodeId=-1` = root) |
+| `GET /partial-caching` · `/stats` · `/:id` | Keyset list · KPI · one code |
+| `POST /partial-caching/save` · `/delete/:id` | Create / update · delete a code |
+| `GET /url-parameters` · `/stats` · `/:id` | Keyset list · KPI · one parameter |
+| `POST /url-parameters/save` · `/delete/:id` | Create / update · delete |
+| `GET /clearing-logs` · `/stats` | Offset-paginated logs · KPI (total / today / users) |
+| `POST /clearing-logs/clear-cache` | Clear by URL **and log it** |
+
+```ts
+const BASE = '/melis/MelisCacheInternal/react-api'
+// save config + page exclusions (bulk replace)
+await apiFetch<null>('/config/save', {
+  method: 'POST',
+  body: JSON.stringify({ active: true, time: 3600, requestType: ['GET'],
+    pageExclusions: [{ pageId: 42, excludeGet: true, excludePost: false }] }),
+})
+// create a partial-caching code
+await apiFetch<{ id: number }>('/partial-caching/save', {
+  method: 'POST',
+  body: JSON.stringify({ type: 'PLUGIN', code: 'NEWS_LATEST', time: 60,
+    module: '', controller: '', action: '', requestGet: true, requestPost: false }),
+})
+```
+
+Every fetch sends `X-Requested-With: XMLHttpRequest`; POSTs with a body add
+`Content-Type: application/json`. The React controllers reuse the module's Laminas services and
+tables; the legacy controllers still power the *Old* view.
+
+## Capabilities
+
+Advanced rights are declared in `config/react.capabilities.php` under the rights-bearing node
+`MelisCacheInternal_tool` (the same `melisKey` as the manifest, the *Old*-view iframe and the access
+guard). It is a per-tab tree; `Capabilities::flatten()` turns it into dotted strings that React reads
+via `useCaps('MelisCacheInternal_tool').can('…')`:
+
+```
+MelisCacheInternal_tool
+├─ tab "config"   actions: edit                                  (Properties — save settings)
+├─ tab "partial"  actions: list · create · edit · delete · export   (Partial Caching CRUD)
+├─ tab "params"   actions: list · create · edit · delete · export   (URL Parameters CRUD)
+└─ tab "logs"     actions: list · clear · export                 (Cache Clearing — logs + clear by URL)
+```
+
+Tab visibility is filtered by `can('config'|'partial'|'params'|'logs')`; actions are gated per leaf
+(e.g. the config Save button by `can('config.edit')`). Every server action is guarded twice —
+`denyUnlessAccess()` (auth + `MelisCoreRights::canAccess`) then `denyUnlessCan('<leaf>')` — and
+`Capabilities` is default-allow for an undeclared tool/cap.
 
 ## Database tables
 
@@ -121,9 +205,10 @@ $hasCache = $cacheSrv->hasCache($pageId, $normalisedUrl, $methodType); // 1=GET,
 | Concern | Path |
 | --- | --- |
 | Module bootstrap (listener wiring) | `vendor/melisplatform/melis-cache-internal/src/Module.php` |
-| Module config (services, controllers, table aliases) | `vendor/melisplatform/melis-cache-internal/config/module.config.php` |
-| Backoffice tool tree | `vendor/melisplatform/melis-cache-internal/config/app.toolstree.php` |
-| DataTable definitions | `vendor/melisplatform/melis-cache-internal/config/app.tools.php` |
+| Module config (services, controllers, table aliases, React routes) | `vendor/melisplatform/melis-cache-internal/config/module.config.php` |
+| React capabilities tree | `vendor/melisplatform/melis-cache-internal/config/react.capabilities.php` |
+| React API controllers | `vendor/melisplatform/melis-cache-internal/src/Controller/React/` |
+| React brick source / build | `vendor/melisplatform/melis-cache-internal/ui-react/` → `public/ui-react/brick.js` + `brick.manifest.json` |
 | Full-page cache service | `vendor/melisplatform/melis-cache-internal/src/Service/MelisCacheInternalService.php` |
 | Partial/zone cache service | `vendor/melisplatform/melis-cache-internal/src/Service/PartialCachingService.php` |
 | Serve listener (cache hit) | `vendor/melisplatform/melis-cache-internal/src/Listener/MelisCacheInternalPageGetCacheListener.php` |

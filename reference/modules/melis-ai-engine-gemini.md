@@ -1,6 +1,6 @@
 # MelisAIEngineGemini
 
-> Google Gemini provider for the Melis AI engine — package `melisplatform/melis-ai-engine-gemini`.
+> Google Gemini provider for the Melis AI engine — a backend engine with no back-office of its own. Package `melisplatform/melis-ai-engine-gemini`.
 
 ## Purpose
 
@@ -8,8 +8,20 @@
 `MelisAIEngineModelService` contract. It supplies Gemini-specific HTTP client setup, the
 `generateContent` payload shape (the `contents` / `parts` schema), tool/function-call mapping,
 file handling via the File API or inline embed, and token-usage parsing. The module is stateless
-(no tables of its own) and ships no UI — all AI screens are provided by `melis-ai` /
+(no tables of its own) and ships **no UI** — all AI screens are provided by `melis-ai` /
 `melis-ai-engine`.
+
+## No React back-office
+
+This module has **no React tool** and is not meant to have one — it is a backend provider layer,
+not a screen. It ships no `ui-react/` brick, no `config/react-api.php`, no
+`config/react.capabilities.php`, no controller, and shows **no sidebar entry or menu node** in
+`/melis-react`. There are no screenshots.
+
+In the React back-office Gemini surfaces only **indirectly**, as a selectable engine/model inside
+the **MelisAI** admin (Platform AI / Instances / Models & keys). When an admin creates a model
+whose company is **Google** and this module is installed, `MelisAIEngine` routes that model's chat
+and agents through the Gemini engine implemented here — with no dedicated Gemini page.
 
 ## Enable it
 
@@ -21,7 +33,7 @@ return [
 ];
 ```
 
-Requires `melisplatform/melis-ai-engine` `^5.3`. The engine selects this provider automatically
+Requires `melisplatform/melis-ai-engine` `^6.0`. The engine selects this provider automatically
 at runtime when the active model's company name contains **`Google`** and this module is
 installed; it builds `MelisAIEngineModelGeminiService` via
 `$serviceManager->build(MelisAIEngineModelGeminiService::class, ['modelId' => …, 'agentId' => …])`.
@@ -30,13 +42,13 @@ installed; it builds `MelisAIEngineModelGeminiService` via
 
 | Service alias | Role |
 | --- | --- |
-| `MelisAIEngineModelGeminiService` | The Gemini provider — subclass of `MelisAIEngineModelService`, built per request with `modelId` + `agentId`. |
+| `MelisAIEngineModelGeminiService` | The Gemini provider — subclass of `MelisAIEngineModelService`, built per request with `modelId` + `agentId` (via `MelisAIEngineModelGeminiServiceFactory`). |
 
 Notable methods of `MelisAIEngineModelGeminiService`:
 
 | Method | Gemini implementation |
 | --- | --- |
-| `setClient()` | Builds a `Laminas\Http\Client` POSTing to `{api_url}/models/{mam_generative_model}:generateContent?key={apiKey}`. The API key is a **URL query parameter** (not a header). Long timeout. |
+| `setClient()` | Builds a `Laminas\Http\Client` POSTing to `{api_url}/models/{mam_generative_model}:generateContent`. The API key is sent in the **`x-goog-api-key`** request header (kept out of the URL). Long timeout. |
 | `getMessageKey()` | Returns `'contents'`. |
 | `addToolsToPayload()` | Fetches tools via `getAgentFunctions()`, sanitises each, renames `input_schema` → `parameters`, and wraps as `tools:[{functionDeclarations:[…]}]` with `toolConfig.functionCallingConfig.mode='AUTO'`. Falls back to a `url_context` tool when no functions are present. |
 | `constructContent()` / `addContentToPayload()` | Maps role `assistant` → `model`; builds `parts` arrays containing `{text}`, `{fileData:{fileUri,mimeType}}` (File API), or `{inlineData:{mimeType,data}}` (base64). |
@@ -56,20 +68,28 @@ The model's `mam_file_upload_mode` controls how files reach Gemini:
 
 ## Configuration
 
-Config lives under `config['plugins']['melisaiengine']['datas']['AI']['Gemini']`:
+Fixed provider config lives under `config['plugins']['melisaiengine']['datas']['AI']['Gemini']`
+(in `config/app.interface.php`, no UI):
 
 | Key | Purpose |
 | --- | --- |
-| `api_url` | Base URL for `generateContent` requests. |
-| `upload_url` | Gemini File API upload endpoint. |
+| `api_url` | Base URL for `generateContent` requests (`https://generativelanguage.googleapis.com/v1beta`). |
+| `upload_url` | Gemini File API upload endpoint (`https://generativelanguage.googleapis.com/upload/v1beta/files`). |
 | `allowed_mimetypes` | Accepted MIME types (returned by `getAllowedMimetypes()`). |
 
-The API key comes from the model's platform key record (`mapk_*`), managed in the AI backoffice.
-It is not stored in config files and has no environment-variable fallback.
+Per-model values come from the **model row** configured in MelisAI, not from this module:
 
-::: warning API key in URL
-The Google API key is appended as a query parameter (`?key=…`). Request logs and HTTP proxies
-may capture it — ensure your infrastructure limits log retention accordingly.
+- **`mam_generative_model`** — the Gemini model id (e.g. `gemini-…`), used in the request URL.
+- **`mapk_keys`** — the **Google API key**, sent in the `x-goog-api-key` header. It comes from the
+  model's platform key record, is not stored in config files, and has **no environment-variable
+  fallback**.
+- **`mam_file_upload_mode`** (`fileapi` default, or `embed`) and `mam_internal_upload` — govern
+  how files are uploaded.
+
+::: tip API key in header
+Unlike earlier releases that appended the key as a `?key=…` query parameter, the current source
+sends the Google API key in the **`x-goog-api-key`** request header, keeping it out of URLs and
+proxy logs.
 :::
 
 ## Tool / function-call mapping
@@ -88,7 +108,7 @@ performs this rename before sending. Tool calls arrive as `{functionCall:{name,a
 | Assistant role label | `model` | `assistant` |
 | Tool schema key | `parameters` | `input_schema` |
 | Tool-call id | none (positional) | `tool_use_id` |
-| Auth method | URL query param `?key=` | `x-api-key` header |
+| Auth method | `x-goog-api-key` header | `x-api-key` header |
 | Default file mode | `fileapi` | `embed` |
 
 ## Key files
@@ -96,6 +116,8 @@ performs this rename before sending. Tool calls arrive as `{functionCall:{name,a
 | Concern | Path |
 | --- | --- |
 | Provider service | `vendor/melisplatform/melis-ai-engine-gemini/src/Service/MelisAIEngineModelGeminiService.php` |
+| Service factory | `vendor/melisplatform/melis-ai-engine-gemini/src/Service/Factory/MelisAIEngineModelGeminiServiceFactory.php` |
+| Fixed config | `vendor/melisplatform/melis-ai-engine-gemini/config/app.interface.php` |
 
 ## See also
 

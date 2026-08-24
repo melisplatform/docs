@@ -1,0 +1,33 @@
+# Local serving of the built VitePress docs behind the shared nginx-proxy.
+#
+# The Melis dev stack routes *.local hostnames by Host header via the external
+# "nginx-proxy" container (VIRTUAL_HOST). This service publishes the static
+# build (.vitepress/dist) as melisplatform-doc.local — no port is exposed
+# directly; nginx-proxy dispatches on port 80.
+#
+# Prereqs:
+#   npm install && npm run build      # produces .vitepress/dist
+#   external network "nginx-proxy" up  # part of the Melis dev stack
+#
+# Start:  docker compose up -d
+# Rebuild content:  npm run build   (files are bind-mounted, just refresh)
+# Stop:   docker compose down
+
+services:
+  docs:
+    image: nginx:alpine
+    container_name: melis-platform-doc
+    restart: unless-stopped
+    environment:
+      - VIRTUAL_HOST=melisplatform-doc.local
+      - VIRTUAL_PORT=80
+    volumes:
+      - ./.vitepress/dist:/usr/share/nginx/html:ro
+      - ./docker/nginx-docs.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - nginx-proxy
+
+networks:
+  nginx-proxy:
+    name: nginx-proxy
+    external: true

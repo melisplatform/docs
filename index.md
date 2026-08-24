@@ -2,9 +2,9 @@
 layout: home
 
 hero:
-  name: Melis Platform
+  name: Melis Platform v6
   text: Developer documentation
-  tagline: Build, extend and operate websites & applications on the open-source Laminas-based platform.
+  tagline: Build, extend and operate websites & applications on the open-source Laminas-based platform — now with a modern React back-office.
   actions:
     - theme: brand
       text: Get started →
@@ -58,8 +58,8 @@ features:
   - icon:
       light: /icons/cube-light.svg
       dark: /icons/cube-dark.svg
-    title: 35 modules documented
-    details: Every Community Edition module — purpose, services, backoffice tools, front helpers, DB tables and real code examples.
+    title: 50 modules documented
+    details: Every Community Edition module — purpose, services, back-office tools, front helpers, DB tables and real code examples.
     link: /reference/modules
     linkText: Module reference
   - icon:
@@ -75,11 +75,18 @@ features:
 
 **Melis Platform** is an open-source CMS and application platform built on
 **[Laminas](https://getlaminas.org/)** (the successor to Zend Framework / ZF2). It ships a
-modular **backoffice** for managing sites, pages, e-commerce, content and more — and is designed
+modular **back-office** for managing sites, pages, e-commerce, content and more — and is designed
 to be **extended** with your own modules and tools.
 
-This documentation targets **developers**: from first install through architecture, building
-sites and tools, integrating commerce, adding AI capabilities, and the full module API reference.
+This documentation covers **v6**, which keeps the same framework, modules and APIs while
+replacing the back-office with a **modern React UI** at `/melis-react`. Tools are rebuilt as
+native-React "bricks", each with a New/Old toggle back to the classic tool in an iframe, and a
+global floating **AI Assistant** overlay is available across the interface.
+
+It targets **developers**: from first install through architecture, building sites and tools,
+integrating commerce, adding AI capabilities, and the full module API reference.
 For the product, visit **[melisplatform.com](https://www.melisplatform.com/)**.
+
+> The v5 documentation remains available under **[/legacy/](/legacy/)**.
 
 > 🇫🇷 Cette documentation est aussi disponible en **[français](/fr/)**.

@@ -18,7 +18,18 @@ return [
 
 Nécessite `melisplatform/melis-login-2fa` (`^5.3`) et PHP `^8.1|^8.3`. Le module central `MelisLogin2fa` doit être chargé en premier.
 
-Une fois chargé, activez **SMS (Primotexto)** dans **Configuration système → Autre configuration → 2FA → Sites & modules** et placez-le en première position pour en faire le canal principal. Renseignez les identifiants API Primotexto sous la clé de configuration `melis_login_2fa_primotexto` (voir [Configuration](#configuration)).
+Une fois chargé, activez **SMS (Primotexto)** dans la **configuration 2FA** partagée (Configuration système → 2FA) et placez-le en première position pour en faire le canal principal. Renseignez les identifiants API Primotexto sous la clé de configuration `melis_login_2fa_primotexto` (voir [Configuration](#configuration)).
+
+## Dans le back-office React
+
+Ce module est un **plugin de méthode 2FA côté serveur**, et non un outil de back-office. Dans le back-office React (`/melis-react`), il n'a **ni page, ni route, ni entrée de menu**. Toute son empreinte React se limite à une **brique de découverte réduite à un id** : un `public/ui-react/brick.manifest.json` minimal (avec `route`, `forwardKey` et `melisKey` tous à `null`) et un `brick.tsx` qui n'enregistre que son id.
+
+```tsx
+// ui-react/src/brick.tsx — the entire React contribution (id only, no UI).
+window.__melisRegisterBrick?.({ id: 'melis-login-2fa-primotexto' })
+```
+
+C'est l'enregistrement de cet id qui fait apparaître le module dans `GET /melis/react-api/react-modules`, la liste de découverte des modules actifs qui fournissent une brique. Le `useModuleActive('MelisLogin2faPrimotexto')` de MelisCore s'appuie sur cette liste pour **révéler le champ `usr_phone` sur le formulaire Utilisateurs natif** — les utilisateurs ont besoin d'un numéro de téléphone pour la 2FA par SMS. Le module ne fournit **aucun endpoint `react-api` ni aucune capability** propre ; les paramètres de l'API Primotexto (`url`, `api_key`, `sender`) sont rendus par la section de configuration 2FA partagée appartenant au cœur 2FA, et non par ce module.
 
 ## Configuration
 
@@ -46,7 +57,7 @@ return [
 
 | Écouteur | Événement | Comportement |
 | --- | --- | --- |
-| `MelisCoreCanSendListener` | `canSend` | Retourne `['melis-login-2fa-primotexto' => bool]` ; si l'envoi est impossible mais qu'un canal email est actif et ordonné après, stocke un `twofa_fallback_message` dans la session `melis_login_2fa` |
+| `MelisCoreCanSendListener` | `canSend` | Retourne `['melis-login-2fa-primotexto' => bool]` ; si l'envoi est impossible mais qu'un canal email est ordonné juste après, stocke un `twofa_fallback_message` dans la session `melis_login_2fa` |
 | `MelisCoreSendUserCodeListener` | `sendUserCode` | N'agit que si le code n'a pas encore été envoyé et que ce canal est `orderedModules[0]` ; réutilise ou crée la ligne `melis_core_login_2fa_codes`, envoie via `SmsService`, positionne `sent=true`, appelle `stopPropagation` |
 
 ## Tables de base de données
@@ -84,6 +95,8 @@ $url = $config['url'] . '?' . http_build_query([
 | Écouteur `sendUserCode` | `vendor/melisplatform/melis-login-2fa-primotexto/src/Listener/MelisCoreSendUserCodeListener.php` |
 | Service API SMS | `vendor/melisplatform/melis-login-2fa-primotexto/src/Service/SmsService.php` |
 | Plugin de contrôleur | `vendor/melisplatform/melis-login-2fa-primotexto/src/Controller/Plugin/MelisLogin2faPrimotextoControllerPlugin.php` |
+| Brique React | `vendor/melisplatform/melis-login-2fa-primotexto/ui-react/src/brick.tsx` |
+| Manifeste React | `vendor/melisplatform/melis-login-2fa-primotexto/public/ui-react/brick.manifest.json` |
 | Configuration du module | `vendor/melisplatform/melis-login-2fa-primotexto/config/module.config.php` |
 | Migration DB | `vendor/melisplatform/melis-login-2fa-primotexto/install/dbdeploy/` |
 

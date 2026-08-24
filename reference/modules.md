@@ -1,12 +1,23 @@
 # Module reference
 
-Melis Platform is a set of `melisplatform/*` Composer packages. This is a map of the modules that
-ship with the skeleton, grouped by area. Each is a standard Laminas module under
-`vendor/melisplatform/`.
+Melis Platform is a set of `melisplatform/*` Composer packages. This is a map of the **50
+modules** that ship with the v6 skeleton, grouped by area. Each is a standard Laminas module
+under `vendor/melisplatform/`.
+
+Melis v6 keeps the same framework and modules as v5, but **replaces the back-office with a
+React UI** served at `/melis-react`. Tools are now native-React **"bricks"** — self-contained
+React UIs a module ships and the shell discovers at boot — with a **New (React) / Old (iframe)**
+toggle so any tool that hasn't been rewritten still runs as its legacy jQuery/AJAX page inside
+the shell. A global **AI Assistant** overlay is available anywhere. This layer is served through
+two infrastructure modules: [`melis-react-api`](/reference/modules/melis-react-api) (the JSON
+API backbone — user, menu, assets, brick discovery, dashboard data, capability resolver) and
+[`melis-react-override`](/reference/modules/melis-react-override) (the SPA shell route plus the
+legacy-tool iframe mechanism). See the [Architecture guide](/guide/architecture) for how it all
+fits together.
 
 ::: tip One page per module
-Every module also has a **dedicated reference page** (purpose, key services, tools, plugins, tables,
-key files) — open the **Modules** section in the sidebar, e.g. [MelisCore](/reference/modules/melis-core),
+Every module also has a **dedicated reference page** (purpose, key services, tools, plugins,
+tables, key files) — open the **Modules** section in the sidebar, e.g.
 [MelisCms](/reference/modules/melis-cms), [MelisCommerce](/reference/modules/melis-commerce),
 [MelisAIEngine](/reference/modules/melis-ai-engine).
 :::
@@ -15,109 +26,93 @@ key files) — open the **Modules** section in the sidebar, e.g. [MelisCore](/re
 
 | Module | Role |
 | --- | --- |
-| `melis-core` | The platform core: backoffice shell, config tree (`MelisCoreConfig`), auth, rights, services, events. |
-| `melis-asset-manager` | Serves and manages module/site assets (CSS/JS/images). |
-| `melis-installer` | The first-run setup wizard. |
-| `melis-dbdeploy` | Versioned database deltas (the `changelog` mechanism). |
-| `melis-composerdeploy` | Composer-based deployment/update of modules. |
-| `melis-marketplace` | In-backoffice marketplace to discover & install modules. |
+| [`melis-core`](/reference/modules/melis-core) | The platform core: back-office shell, config tree (`MelisCoreConfig`), auth, rights, users, services and events. Unchanged in v6 — only the shell it powers is now rendered by React. |
+| [`melis-asset-manager`](/reference/modules/melis-asset-manager) | Serves every module's `public/` assets (CSS/JS/images) over clean URLs and delivers the compiled bundles. |
+| [`melis-cache-internal`](/reference/modules/melis-cache-internal) | Full-page HTTP cache for the CMS front-office, with partial (zone) caching and per-page exclusions. |
+| [`melis-composerdeploy`](/reference/modules/melis-composerdeploy) | Embeds Composer to install, update and remove modules programmatically. |
+| [`melis-dbdeploy`](/reference/modules/melis-dbdeploy) | Headless database-migration runner — applies each module's SQL deltas in order. |
+| [`melis-marketplace`](/reference/modules/melis-marketplace) | In-backoffice module store to discover, download, update and remove modules. |
+| [`melis-phpinfo`](/reference/modules/melis-phpinfo) | Read-only diagnostic tool that renders PHP's native `phpinfo()` inside the React back-office. |
+| [`melis-sql`](/reference/modules/melis-sql) | Read-only SQL query runner in the Dev Tools, shipped as a native full-React brick. |
+| [`melis-react-api`](/reference/modules/melis-react-api) | JSON API backbone of the React back-office — boots the shell and hosts the capability resolver. |
+| [`melis-react-override`](/reference/modules/melis-react-override) | React infrastructure — renders legacy tools inside the `/melis-react` shell and serves the React SPA. |
 
-## CMS & front office
+## CMS & front
 
 | Module | Role |
 | --- | --- |
-| `melis-cms` | The CMS backoffice: sites, page tree, page editor, templates. |
-| `melis-engine` | Page/data services that power rendering (`MelisPageService`, tree, cache). |
-| `melis-front` | The front-office engine that displays sites (`MelisTag`, `MelisDragDropZone`). |
-| `melis-demo-cms` | The official demo site — the canonical example of a site module. |
-| `melis-cms-news` | News posts + templating plugin. |
-| `melis-cms-prospects` | Prospect/lead capture + templating plugin. |
-| `melis-cms-slider` | Slider system + templating plugin. |
-| `melis-cms-category2` | Content categories. |
-| `melis-cms-page-historic` | Per-page version history. |
-| `melis-cms-page-analytics` | Default page analytics. |
-| `melis-cms-page-script-editor` | Inject custom scripts per page / per site. |
-| `melis-cms-site-robot` | Dynamic per-site `robots.txt` generation. |
+| [`melis-cms`](/reference/modules/melis-cms) | The CMS back-office — sites, page tree, page editor, templates, styles and SEO, as a React back-office. |
+| [`melis-engine`](/reference/modules/melis-engine) | Shared CMS data foundation — page model, sites, languages, templating-plugin base class and render cache. |
+| [`melis-front`](/reference/modules/melis-front) | Front-office rendering system — turns a URL into a finished page and ships the content blocks (page plugins). |
+| [`melis-demo-cms`](/reference/modules/melis-demo-cms) | The official reference/demo website — a ready-to-install **site module**. |
+| [`melis-cms-blog`](/reference/modules/melis-cms-blog) | Blog system with a native React back-office and three front-office display plugins. |
+| [`melis-cms-comments`](/reference/modules/melis-cms-comments) | Comment system for News and Blog — moderation, approval workflow and a front plugin; a Comments tab in the editor. |
+| [`melis-cms-news`](/reference/modules/melis-cms-news) | News/blog system with a React authoring tool and three front-office display plugins. |
+| [`melis-cms-prospects`](/reference/modules/melis-cms-prospects) | Leads/contact management — a front form captures messages; a React tool browses, filters, exports and classifies them. |
+| [`melis-cms-slider`](/reference/modules/melis-cms-slider) | Slider/carousel manager (native React brick) with a front-office templating plugin. |
+| [`melis-cms-category2`](/reference/modules/melis-cms-category2) | Multi-site, multilingual content categories, with a native React back-office. |
+| [`melis-cms-mcq`](/reference/modules/melis-cms-mcq) | Back-office MCQ (quiz) builder, now a native full-React tool. |
+| [`melis-cms-mcq-engine`](/reference/modules/melis-cms-mcq-engine) | Data, scoring and front-office renderer behind the React MCQ tool. |
+| [`melis-cms-page-historic`](/reference/modules/melis-cms-page-historic) | Audit log for page editing — a Historic tab in the React page editor plus a dashboard widget. |
+| [`melis-cms-page-analytics`](/reference/modules/melis-cms-page-analytics) | Basic page-visit analytics, extensible with a provider (e.g. Google Analytics). |
+| [`melis-cms-page-script-editor`](/reference/modules/melis-cms-page-script-editor) | Inject custom `<script>`/`<style>`/HTML per page or per site (analytics, pixels, widgets). |
+| [`melis-cms-share`](/reference/modules/melis-cms-share) | Injects social-media share / Open Graph meta tags, managed from a native React back-office. |
+| [`melis-cms-site-robot`](/reference/modules/melis-cms-site-robot) | Per-domain `robots.txt` editing and dynamic serving, with a native full-React back-office. |
+| [`melis-cms-tags`](/reference/modules/melis-cms-tags) | Shared tag/taxonomy system that content modules hang items off, now with a native React back-office. |
+| [`melis-cms-user-account`](/reference/modules/melis-cms-user-account) | Front-office visitor account system — registration, login and per-site profiles, administered from a React tool. |
+| [`melis-cms-google-analytics`](/reference/modules/melis-cms-google-analytics) | GA4 provider that renders sessions curves, KPI totals and demographics in the React back-office. |
+| [`melis-cms-link-check`](/reference/modules/melis-cms-link-check) | Link tester that crawls a page (and optionally sub-pages) and records every broken link. |
 
 ## Commerce
 
 | Module | Role |
 | --- | --- |
-| `melis-commerce` | E-commerce module (catalog, orders, customers…). |
-| `melis-commerce-order-invoice` | Order invoicing for MelisCommerce. |
+| [`melis-commerce`](/reference/modules/melis-commerce) | Full e-commerce framework — catalog, customers, cart/checkout/orders, coupons, shipping and SEO — with a React back-office. |
+| [`melis-commerce-order-invoice`](/reference/modules/melis-commerce-order-invoice) | Adds PDF order-invoice generation, surfaced inside the React Orders tool. |
+| [`melis-commerce-group-discount-per-category`](/reference/modules/melis-commerce-group-discount-per-category) | Per-category price discount (by country and client group) as a tab in the React Catalogs tool. |
 
-## Build & extend
+## Extend & utilities
 
 | Module | Role |
 | --- | --- |
-| `melis-tool-creator` | GUI generator for new backoffice **tools** (see [Create a tool](../guide/create-a-tool)). |
-| `melis-templating-plugin-creator` | Scaffold new front-office **templating plugins**. |
-| `melis-dashboard-plugin-creator` | Scaffold new backoffice **dashboard plugins**. |
-| `melis-data-source` | Generic data-source module. |
-| `melis-document-upload` | Document/file upload management. |
-| `melis-calendar` | Calendar features. |
-| `melis-messenger` | Messaging. |
-| `melis-design` | Design/theming helpers. |
-| `melis-small-business` | Small-business oriented features. |
+| [`melis-templating-plugin-creator`](/reference/modules/melis-templating-plugin-creator) | Back-office wizard that scaffolds a complete front-office **templating plugin**. |
+| [`melis-dashboard-plugin-creator`](/reference/modules/melis-dashboard-plugin-creator) | Wizard that scaffolds a new back-office **dashboard plugin** (widget), as a native React brick. |
+| [`melis-calendar`](/reference/modules/melis-calendar) | Scheduling tool with a native React month calendar, drag-and-drop events and a dashboard widget. |
+| [`melis-cron`](/reference/modules/melis-cron) | Scheduled-task manager — define CLI/HTTP tasks, run them, and inspect run history, via a native React tool. |
+| [`melis-document-upload`](/reference/modules/melis-document-upload) | Document-upload management as a native React tool — define types, collect and serve files. |
+| [`melis-messenger`](/reference/modules/melis-messenger) | Internal user-to-user messaging — a topbar notification icon and a tab in My Account. |
+| [`melis-small-business`](/reference/modules/melis-small-business) | Editorial add-on — roles, validation workflow, page versioning, comments, locking and a media library. |
+
+## Authentication
+
+| Module | Role |
+| --- | --- |
+| [`melis-login-2fa`](/reference/modules/melis-login-2fa) | Two-factor authentication core — requires a one-time code and delegates delivery to channel modules. |
+| [`melis-login-2fa-email`](/reference/modules/melis-login-2fa-email) | Email delivery channel — sends the one-time login code by email. |
+| [`melis-login-2fa-primotexto`](/reference/modules/melis-login-2fa-primotexto) | SMS delivery channel via the Primotexto gateway. |
+
+## Notifications
+
+| Module | Role |
+| --- | --- |
+| [`melis-newsletter`](/reference/modules/melis-newsletter) | Turns a CMS page into a personalised email newsletter and delivers it to subscriber groups, from a React back-office. |
 
 ## AI
 
 | Module | Role |
 | --- | --- |
-| `melis-ai` | The AI module surfaced in the backoffice. |
-| `melis-ai-engine` | The core AI engine (agents, instances, scenarios). |
-| `melis-ai-engine-claude` | Anthropic Claude provider for the AI engine. |
-| `melis-ai-engine-gemini` | Google Gemini provider for the AI engine. |
-| `melis-ai-community-extensions` | Community AI extensions (e.g. content/news/template assistants). |
-| `melis-ai-tool-creator` | Create AI-powered tools. |
+| [`melis-ai`](/reference/modules/melis-ai) | React back-office for the AI suite — connect providers, design agents, deploy instances, watch usage, chat anywhere. |
+| [`melis-ai-engine`](/reference/modules/melis-ai-engine) | The abstract AI engine — provider contract, agent/scenario runtime, conversation store, MCP/tool bridge and shared React chat components. |
+| [`melis-ai-engine-claude`](/reference/modules/melis-ai-engine-claude) | Anthropic Claude provider for the AI engine (backend, no React UI of its own). |
+| [`melis-ai-engine-gemini`](/reference/modules/melis-ai-engine-gemini) | Google Gemini provider for the AI engine (backend, no back-office of its own). |
+| [`melis-ai-community-extensions`](/reference/modules/melis-ai-community-extensions) | Injects AI generation into existing CMS editing surfaces (mini-templates, news, drag-and-drop zones). |
 
-## Module details (services & tables)
-
-The modules you'll most often integrate with, with their main public services and key tables.
-
-### CMS content modules
-
-- **melis-cms-news** — news/blog. Services `MelisCmsNewsService`, `MelisCmsNewsSeoService`; front
-  plugins `MelisCmsNewsLatestNewsPlugin`, `MelisCmsNewsListNewsPlugin`, `MelisCmsNewsShowNewsPlugin`.
-  Tables `melis_cms_news`, `melis_cms_news_texts`, `melis_cms_news_seo`.
-- **melis-cms-prospects** — lead capture. Service `MelisProspectsService`; front plugin
-  `MelisCmsProspectsShowFormPlugin`; GDPR auto-delete service. Tables `melis_cms_prospects*`.
-- **melis-cms-slider** — sliders. Service `MelisCmsSliderService`; front plugin
-  `MelisCmsSliderShowSliderPlugin`.
-- **melis-cms-category2** — multi-site/lang categories. Services `MelisCmsCategory2Service`,
-  `MelisCmsCategory2MediaService`; front plugin `MelisCmsCategoryDisplayCategoriesPlugin`. Tables
-  `melis_cms_category2*`.
-- **melis-cms-page-script-editor** — inject custom JS/CSS per page/site (listeners auto-inject at
-  render). Tables `melis_cms_scripts`, `melis_cms_scripts_exceptions`.
-- **melis-cms-page-historic** — page version history (Historic tab). Table `melis_hist_page_historic`.
-- **melis-cms-page-analytics** — per-page analytics (extensible to e.g. Google Analytics). Service
-  `MelisCmsPageAnalyticsService`.
-- **melis-cms-site-robot** — serves a per-site `robots.txt`.
-
-### Utilities & extensions
-
-- **melis-document-upload** — secure, token-based file uploads. Services `MelisDocumentUploadService`,
-  `MelisDocumentService`. Tables `melis_docupl_*`. Public access via `?token=…`.
-- **melis-data-source** — generic data sources (CSV / DB query / custom) consumed by tools &
-  plugins. Service `MelisDataSourceService`; helpers `DataSourceHelper`, `DataFiltersViewHelper`.
-- **melis-calendar** — backoffice calendar + events. Service `MelisCalendarService`; table
-  `melis_calendar`; dashboard widget `MelisCalendarEventsPlugin`.
-- **melis-messenger** — internal messaging. Service `MelisMessengerService`; tables
-  `melis_messenger_msg*`.
-- **melis-small-business** — page versioning, workflow/approval, comments, page locking, media
-  library. Services around `MelisSBPageService`, `MelisSBPageCommentService`; tables `melis_sb_*`.
-- **melis-design** — a large reference library of ready HTML/CSS/JS UI patterns (no services) to
-  copy from when building tools/plugins.
-
-### Platform plumbing
-
-- **melis-asset-manager** — serves module `public/` assets and generates
-  `config/melis.modules.path.php`. Service `MelisAssetManagerModulesService`; icon view helpers.
-- **melis-marketplace** — browse/install modules from Packagist (`type: melisplatform-module`).
-  Service `MelisMarketPlaceService`.
-- **melis-installer** — first-run setup wizard (empty / site / demo install).
-- **melis-composerdeploy** — Composer-driven module deployment. Service `MelisComposerService`.
-- **melis-tool-creator** — GUI generator for backoffice tools. Service `MelisToolCreatorService`.
+::: tip v5-only modules live under /legacy
+Some modules from the v5 back-office have no dedicated v6 page yet — e.g.
+[`melis-tool-creator`](/legacy/reference/modules/melis-tool-creator),
+[`melis-installer`](/legacy/reference/modules/melis-installer) and the `form-*` modules.
+Their documentation is frozen under `/legacy/reference/modules/`.
+:::
 
 ::: tip Browse the source
 Every module lives at `vendor/melisplatform/<module-name>/`. Reading a module's `config/` and

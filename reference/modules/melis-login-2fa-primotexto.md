@@ -18,7 +18,18 @@ return [
 
 Requires `melisplatform/melis-login-2fa` (`^5.3`) and PHP `^8.1|^8.3`. The core module `MelisLogin2fa` must be loaded first.
 
-Once loaded, enable **SMS (Primotexto)** in **System config → Other config → 2FA → Sites & modules** and order it first to make it the primary channel. Supply the Primotexto API credentials under the `melis_login_2fa_primotexto` config key (see [Configuration](#configuration)).
+Once loaded, enable **SMS (Primotexto)** in the shared **2FA configuration** (System config → 2FA) and order it first to make it the primary channel. Supply the Primotexto API credentials under the `melis_login_2fa_primotexto` config key (see [Configuration](#configuration)).
+
+## In the React back-office
+
+This module is a **server-side 2FA method plugin**, not a back-office tool. In the React back-office (`/melis-react`) it has **no page, no route and no menu entry**. Its entire React footprint is an **id-only discovery brick**: a minimal `public/ui-react/brick.manifest.json` (with `route`, `forwardKey` and `melisKey` all `null`) and a `brick.tsx` that registers only its id.
+
+```tsx
+// ui-react/src/brick.tsx — the entire React contribution (id only, no UI).
+window.__melisRegisterBrick?.({ id: 'melis-login-2fa-primotexto' })
+```
+
+Registering that id is what makes the module appear in `GET /melis/react-api/react-modules`, the discovery list of active modules that ship a brick. MelisCore's `useModuleActive('MelisLogin2faPrimotexto')` keys off that list to **reveal the `usr_phone` field on the native Users form** — users need a phone number for SMS 2FA. The module contributes **no `react-api` endpoints and no capabilities** of its own; the Primotexto API settings (`url`, `api_key`, `sender`) are rendered by the shared 2FA configuration section owned by the 2FA core, not by this module.
 
 ## Configuration
 
@@ -84,6 +95,8 @@ $url = $config['url'] . '?' . http_build_query([
 | `sendUserCode` listener | `vendor/melisplatform/melis-login-2fa-primotexto/src/Listener/MelisCoreSendUserCodeListener.php` |
 | SMS API service | `vendor/melisplatform/melis-login-2fa-primotexto/src/Service/SmsService.php` |
 | Controller plugin | `vendor/melisplatform/melis-login-2fa-primotexto/src/Controller/Plugin/MelisLogin2faPrimotextoControllerPlugin.php` |
+| React brick | `vendor/melisplatform/melis-login-2fa-primotexto/ui-react/src/brick.tsx` |
+| React manifest | `vendor/melisplatform/melis-login-2fa-primotexto/public/ui-react/brick.manifest.json` |
 | Module config | `vendor/melisplatform/melis-login-2fa-primotexto/config/module.config.php` |
 | DB migration | `vendor/melisplatform/melis-login-2fa-primotexto/install/dbdeploy/` |
 

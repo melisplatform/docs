@@ -11,6 +11,27 @@ Both [MelisFront](/reference/modules/melis-front) (front-end rendering) and
 through MelisEngine — neither sibling owns tables. It also defines
 `MelisTemplatingPlugin`, the abstract base class every content plugin in the platform extends.
 
+## Role in the React back-office
+
+MelisEngine has **no React back-office tool and no UI of its own** — no brick, no
+`config/react-api.php`, no capabilities, no sidebar entry in `/melis-react`. It is **not migrated
+to React and is not meant to be**: it is platform infrastructure, not a back-office tool. Its
+relationship to the React shell is entirely behind the scenes, on two paths:
+
+- **Data path** — the React CMS controllers (`MelisReactApi*`, which live in the CMS modules,
+  not here) read and write pages, sites, languages, templates and SEO **only** through
+  MelisEngine's `MelisEngineTable*` gateways and services (`MelisEnginePage`, `MelisEngineTree`,
+  `MelisEngineLang`, …). The React layer never touches the CMS schema directly.
+- **Render path** — the CMS content shown in the React page editor and in the legacy iframe
+  tools is rendered **server-side** (pages → templates → zones → plugins). The engine resolves
+  the page model and defines the plugin base class; MelisFront runs the actual render. React
+  embeds the server-rendered result rather than re-rendering CMS content client-side.
+
+Because it is invisible but load-bearing, engine problems surface *inside the React CMS tools* —
+an empty page tree, a language dropdown that stays empty, a page editor that errors on load —
+typically caused by a missing/behind CMS table or a failing engine service, never by an engine
+screen (there is none).
+
 ## Enable it
 
 MelisEngine is loaded automatically as a dependency. Load order in
@@ -26,8 +47,8 @@ return [
 ];
 ```
 
-Composer dependencies: `melisplatform/melis-core`, `melisplatform/melis-front`,
-`laminas/laminas-cache` (filesystem + memory adapters).
+Composer dependencies: `melisplatform/melis-core` `^6.0`, `melisplatform/melis-front` `^6.0`,
+`laminas/laminas-cache` (filesystem + memory adapters). Runs on PHP `^8.3 | ^8.5`.
 
 ## Key services
 
@@ -53,10 +74,24 @@ Registered as `service_manager` aliases in `config/module.config.php`:
 All services that extend `MelisGeneralService` fire `*_start` / `*_end` events (e.g.
 `melisengine_service_get_available_languages_start` / `_end`) that other modules can hook.
 
+### React consumers (verified)
+
+These are the sanctioned data-path entry points the React CMS tools call into the engine through:
+
+| Engine service / gateway (alias) | Used by (React BO) |
+| --- | --- |
+| `MelisEnginePage` (`MelisPageService`) | melis-cms `MelisReactApiPageController` — page data for the React page editor |
+| `MelisEngineTree` (`MelisTreeService`) | melis-cms `MelisReactApiPageController` — page tree navigation |
+| `MelisEngineLang` (`MelisEngineLangService`) | melis-cms `MelisReactApiCmsSitesController`, `MelisReactApiCmsMenuManagerController` — available CMS languages |
+| `MelisEngineTableCmsLang` (`MelisCmsLangTable`) | melis-cms-tags, melis-cms-user-account, melis-core (GDPR) — React language dropdowns |
+
+The alias `MelisEngineTableCmsLang => MelisCmsLangTable::class` is registered in
+`config/module.config.php`.
+
 ## Backoffice
 
-MelisEngine has no end-user tool of its own. It registers two form-element factories used
-across the back-office:
+MelisEngine has no end-user tool of its own, in the legacy back-office or in `/melis-react`. It
+registers two form-element factories used across the back-office:
 
 | Factory | Purpose |
 | --- | --- |
@@ -75,7 +110,9 @@ The base class for every content plugin lives here:
 | `MelisEngine\Controller\Plugin\MelisTemplatingPlugin` | Abstract base for all content plugins. Defines `front()` (live render, abstract), `back()` (back-office container/edit view), config XML persistence (`loadDbXmlToPluginConfig()` / `savePluginConfigToXml()`), GET/POST loading, preview mode and responsive width. |
 
 Every platform content plugin (News, Slider, Menu, Breadcrumb, …) subclasses this. Implement
-`front()` for live output; the base handles `back()` automatically.
+`front()` for live output; the base handles `back()` automatically. The same plugin pipeline
+feeds the React page editor: MelisFront renders each zone's plugins server-side and React
+displays the result.
 
 Two micro-service listeners hook `melis_core_microservice_amend_data` to expose tree and page
 methods (`getPageChildren`, `getPageFather`, `getDomainByPageId`, `getDatasPage`) over the
@@ -111,8 +148,8 @@ MelisEngine is the single source of truth for the CMS schema
 
 Every table is wrapped by a `MelisEngineTable*` gateway registered in the service manager
 (e.g. `MelisEngineTablePageTree`, `MelisEngineTablePagePublished`, `MelisEngineTablePageSeo`).
-Other modules must always use these gateways — never raw SQL. The base gateway provides
-`getEntryById()`, `getEntryByField()`, `save()`, `deleteById()`, `fetchAll()`.
+Other modules — legacy or React — must always use these gateways, never raw SQL. The base
+gateway provides `getEntryById()`, `getEntryByField()`, `save()`, `deleteById()`, `fetchAll()`.
 
 ## Example
 
@@ -121,12 +158,21 @@ Other modules must always use these gateways — never raw SQL. The base gateway
 ```php
 $pageSvc = $sm->get('MelisEnginePage');
 $page    = $pageSvc->getDatasPage($idPage);            // 'published' (live) by default
-$draft   = $pageSvc->getDatasPage($idPage, 'saved');   // working draft
+$draft   = $pageSvc->getDatasPage($idPage, 'saved');   // draft shown in the React page editor
 
 $tree       = $sm->get('MelisEngineTree');
 $children   = $tree->getPageChildren($idPage, 1);       // 1 = published only
 $breadcrumb = $tree->getPageBreadcrumb($idPage);
 $url        = $tree->getPageLink($idPage, true);        // true = absolute URL
+```
+
+**Fill a React language dropdown from a CMS controller (server-side, delegating to the engine):**
+
+```php
+// Inside a MelisReactApi* controller of a CMS module — the React JSON layer
+// delegates to the engine; MelisEngine exposes no react-api of its own.
+$langTable = $sm->get('MelisEngineTableCmsLang');
+$langs     = $langTable->fetchAll()->toArray();   // fills a React language dropdown
 ```
 
 **Read/write through a table gateway (never raw SQL):**
@@ -168,6 +214,19 @@ class MyPlugin extends MelisEngine\Controller\Plugin\MelisTemplatingPlugin
     }
 }
 ```
+
+## The trio Core / Engine / Front
+
+The React back-office does not change the trio; it sits on top of it:
+
+- **MelisEngine** *(this module)* — owns the entire CMS DB model and exposes it via table
+  gateways + services + cache; defines `MelisTemplatingPlugin`.
+- **MelisFront** — renders pages from the engine's data (runs the content plugins) and powers
+  the editable preview used inside the back-office (legacy *and* the React page editor / iframe
+  tools).
+- **MelisCms** — the CMS back-office; it owns **no tables** and edits everything through the
+  engine. Its React CMS tools (`MelisReactApiPage`, `MelisReactApiCmsSites`,
+  `MelisReactApiCmsMenuManager`, …) are the React consumers listed above.
 
 ## Key files
 

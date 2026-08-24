@@ -83,3 +83,88 @@ h1, h2, h3, h4, .VPHero .name, .VPHero .text {
 .vp-doc [class*='language-'] .line-numbers-wrapper {
   color: #5b5b6b;
 }
+
+/* Real flag images in the language switcher (emoji flags don't render on Windows).
+   VitePress renders each locale link as `.VPMenuLink a` (desktop dropdown) and
+   `.VPNavScreenTranslations .list a` (mobile); the current language is a `.title`.
+   The French link's href starts with /fr; the other one is English. */
+.VPNavBarTranslations .VPMenuLink a::before,
+.VPNavBarTranslations .items .title::before,
+.VPNavScreenTranslations .list a::before {
+  content: '';
+  display: inline-block;
+  width: 1.2rem;
+  height: 0.82rem;
+  margin-right: 0.5rem;
+  background: center / contain no-repeat;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
+  vertical-align: -1px;
+}
+/* French */
+.VPNavBarTranslations .VPMenuLink a[href^='/fr']::before,
+.VPNavScreenTranslations .list a[href^='/fr']::before,
+html[lang^='fr'] .VPNavBarTranslations .items .title::before {
+  background-image: url('/flags/fr.svg');
+}
+/* Spanish */
+.VPNavBarTranslations .VPMenuLink a[href^='/es']::before,
+.VPNavScreenTranslations .list a[href^='/es']::before,
+html[lang^='es'] .VPNavBarTranslations .items .title::before {
+  background-image: url('/flags/es.svg');
+}
+/* German */
+.VPNavBarTranslations .VPMenuLink a[href^='/de']::before,
+.VPNavScreenTranslations .list a[href^='/de']::before,
+html[lang^='de'] .VPNavBarTranslations .items .title::before {
+  background-image: url('/flags/de.svg');
+}
+/* Chinese */
+.VPNavBarTranslations .VPMenuLink a[href^='/zh']::before,
+.VPNavScreenTranslations .list a[href^='/zh']::before,
+html[lang^='zh'] .VPNavBarTranslations .items .title::before {
+  background-image: url('/flags/zh.svg');
+}
+/* Portuguese */
+.VPNavBarTranslations .VPMenuLink a[href^='/pt']::before,
+.VPNavScreenTranslations .list a[href^='/pt']::before,
+html[lang^='pt'] .VPNavBarTranslations .items .title::before {
+  background-image: url('/flags/pt.svg');
+}
+/* Italian */
+.VPNavBarTranslations .VPMenuLink a[href^='/it']::before,
+.VPNavScreenTranslations .list a[href^='/it']::before,
+html[lang^='it'] .VPNavBarTranslations .items .title::before {
+  background-image: url('/flags/it.svg');
+}
+/* Arabic */
+.VPNavBarTranslations .VPMenuLink a[href^='/ar']::before,
+.VPNavScreenTranslations .list a[href^='/ar']::before,
+html[lang^='ar'] .VPNavBarTranslations .items .title::before {
+  background-image: url('/flags/ar.svg');
+}
+/* On v5 (legacy) pages only English + French exist. Hide the other locales in
+   the language switcher — their corresponding link would be /<loc>/legacy/… and
+   404. Those hrefs only ever occur on legacy pages, so this is scoped correctly
+   (v6 pages use /<loc>/guide|reference/…, which don't match). */
+.VPNavBarTranslations .VPMenuLink:has(a[href^='/es/legacy']),
+.VPNavBarTranslations .VPMenuLink:has(a[href^='/de/legacy']),
+.VPNavBarTranslations .VPMenuLink:has(a[href^='/zh/legacy']),
+.VPNavBarTranslations .VPMenuLink:has(a[href^='/pt/legacy']),
+.VPNavBarTranslations .VPMenuLink:has(a[href^='/it/legacy']),
+.VPNavBarTranslations .VPMenuLink:has(a[href^='/ar/legacy']),
+.VPNavScreenTranslations .list .item:has(a[href^='/es/legacy']),
+.VPNavScreenTranslations .list .item:has(a[href^='/de/legacy']),
+.VPNavScreenTranslations .list .item:has(a[href^='/zh/legacy']),
+.VPNavScreenTranslations .list .item:has(a[href^='/pt/legacy']),
+.VPNavScreenTranslations .list .item:has(a[href^='/it/legacy']),
+.VPNavScreenTranslations .list .item:has(a[href^='/ar/legacy']) {
+  display: none !important;
+}
+
+/* English (fallback — none of the other locale prefixes) */
+.VPNavBarTranslations .VPMenuLink a:not([href^='/fr']):not([href^='/es']):not([href^='/de']):not([href^='/zh']):not([href^='/pt']):not([href^='/it']):not([href^='/ar'])::before,
+.VPNavScreenTranslations .list a:not([href^='/fr']):not([href^='/es']):not([href^='/de']):not([href^='/zh']):not([href^='/pt']):not([href^='/it']):not([href^='/ar'])::before,
+html:not([lang^='fr']):not([lang^='es']):not([lang^='de']):not([lang^='zh']):not([lang^='pt']):not([lang^='it']):not([lang^='ar']) .VPNavBarTranslations .items .title::before {
+  background-image: url('/flags/gb.svg');
+}

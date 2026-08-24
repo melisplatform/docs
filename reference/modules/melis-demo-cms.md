@@ -6,11 +6,40 @@
 ## Purpose
 
 `MelisDemoCms` is a complete, installable front-office website (`melis-site: true`,
-`type: melisplatform-module`, category `cms`). It is not a backoffice tool: its pages, controllers
-and plugin templates demonstrate the three content-composition techniques — **manual plugin
-placement**, **drag-and-drop zones** and **inline editable tags** — using MelisFront, MelisEngine
-and the CMS content modules (slider, news, prospects). Use it as the reference implementation when
-[building a site](/guide/build-a-site).
+`type: melisplatform-module`, category `cms`). It is **not a back-office tool**: its pages,
+controllers and plugin templates demonstrate the three content-composition techniques — **manual
+plugin placement**, **drag-and-drop zones** and **inline editable tags** — using MelisFront,
+MelisEngine and the CMS content modules (slider, news, prospects). Use it as the reference
+implementation when [building a site](/guide/build-a-site).
+
+![The live MelisDemoCms front-office home page — top navigation (News / Team / Our Services / Our Process / FAQ / Contact), the "Melis Demo Cms" hero with a "Try to Free" call-to-action over a dashboard hero graphic. This is the server-rendered demo website, not a React back-office screen.](/screenshots/react/melis-demo-cms/melisdemocms-site.png)
+
+## It has no React back-office
+
+Melis v6 introduced a React back-office, but `MelisDemoCms` is a **front-office site**, not a
+back-office tool, so it is deliberately **not migrated to React**:
+
+- no `ui-react/` brick project, no `public/ui-react/brick.manifest.json`;
+- no `config/react-api.php` endpoints and no `config/react.capabilities.php` capabilities;
+- no sidebar entry and no menu node in `/melis-react`.
+
+You never look for a "MelisDemoCms" tool in the React shell. The demo site is **content that the
+generic React CMS tools operate on**, and the live site is **server-rendered** by
+MelisFront/MelisEngine whenever a visitor browses the domain.
+
+### How you work on it in `/melis-react`
+
+Because the module has no tool of its own, you edit it with the generic React CMS tools:
+
+| React tool | What you do with it here |
+| --- | --- |
+| **CMS page editor** | Open any demo page (Home, News, Team, FAQ, Contact…) from the **CMS Pages** tree and edit its inline blocks, drag-and-drop zones and plugins. Primary editing surface. |
+| **Media** | Manage the images/files the pages reference. |
+| **Sites** | The demo site's domain / language settings. |
+| **Templates** | The page templates the CMS pages use. |
+
+> **Where:** sidebar → **CMS Pages** → open a demo-site page in the editor. There is no
+> "MelisDemoCms" entry in the sidebar — the module is the *content*, not a tool.
 
 ## Enable it
 
@@ -26,7 +55,7 @@ be loaded alongside it:
 ```
 
 Required Composer dependencies: `melis-cms`, `melis-cms-slider`, `melis-cms-prospects`,
-`melis-cms-news`, `melis-cms-page-script-editor` (`^5.2`). `melis-engine` and `melis-front` are
+`melis-cms-news`, `melis-cms-page-script-editor` (`^6.0`). `melis-engine` and `melis-front` are
 suggested (and required at runtime). The site is activated for a domain by setting the vhost
 environment variable `MELIS_MODULE "MelisDemoCms"`.
 
@@ -37,13 +66,14 @@ environment variable `MELIS_MODULE "MelisDemoCms"`.
 | `DemoCmsService` | Site-specific helpers used by the front controllers and setup listeners. |
 | `MelisPlatformTable` | Generic table gateway over the core platform table (`MelisEngine\Model\Tables\MelisGenericTable`, primary key `plf_id`). |
 
-## Backoffice
+## Site setup (installer, not React)
 
-This module adds no backoffice toolstree entries. Its only backoffice surface is the **site setup
-wizard** used by the marketplace/installer: controllers `MelisDemoCms\Controller\MelisSetupController`
-(route `/MelisDemoCms/setup`), `MelisSetupPostDownloadController` and
-`MelisSetupPostUpdateController`. Setup configuration lives in `config/setup/download.config.php`
-and `config/setup/update.config.php`.
+This module adds no back-office toolstree entries. Its only back-office surface is the **site setup
+wizard** used by the marketplace/installer: controllers
+`MelisDemoCms\Controller\MelisSetupController` (route `/MelisDemoCms/setup`),
+`MelisSetupPostDownloadController` and `MelisSetupPostUpdateController`. Setup configuration lives
+in `config/setup/download.config.php` and `config/setup/update.config.php`. This is a back-end / CLI
+concern with no React surface.
 
 ## Front office
 
@@ -58,7 +88,8 @@ The site is driven by plain MelisFront site controllers, one per page type:
 | `MelisDemoCms\Controller\Faq` | FAQ listing and category blocks |
 | `MelisDemoCms\Controller\Contact` | Contact / prospects form |
 | `MelisDemoCms\Controller\Testimonial` | Testimonial |
-| `MelisDemoCms\Controller\Template` | Template demos (static / drag-drop / mixed) |
+| `MelisDemoCms\Controller\Template` / `DragDrop` | Template demos (static / drag-drop / mixed) |
+| `MelisDemoCms\Controller\Search` | On-site search results (Lucene; disabled in the demo) |
 | `MelisDemoCms\Controller\Page404` | 404 error page |
 
 Rather than ship its own plugins, `MelisDemoCms` supplies **plugin template overrides**
@@ -78,8 +109,8 @@ Rather than ship its own plugins, `MelisDemoCms` supplies **plugin template over
 | Technique | How it works | Example pages |
 | --- | --- | --- |
 | **Manual placement** | Plugin instantiated in the controller, rendered with params, added as a view child — view echoes it. | Home, Team (slider), News, FAQ, Contact |
-| **Drag-and-drop zone** | `.phtml` declares a named zone; back-office editor drops any plugin in; no controller code. | DragDrop, Template showcases |
-| **Inline editable tags** | `MelisTag` wraps a default value in the view; back-office user edits copy/images in place. | Services, Testimonial, 404 |
+| **Drag-and-drop zone** | `.phtml` declares a named zone; the React CMS page editor drops any plugin in; no controller code. | DragDrop, Template showcases |
+| **Inline editable tags** | `MelisTag` wraps a default value in the view; the author edits copy/images in place from the React page editor. | Services, Testimonial, 404 |
 
 ### Listeners
 
@@ -114,13 +145,14 @@ $this->view->addChild($homeSlider1, 'homeSlider1');
 // view: <?= $this->homeSlider1 ?>
 ```
 
-A drag-and-drop zone requires a single call in the view — no controller code:
+A drag-and-drop zone requires a single call in the view — no controller code (the block is filled
+from the React CMS page editor):
 
 ```php
 <?= $this->MelisDragDropZone($this->idPage, 'dragdropzone_home_1') ?>
 ```
 
-An inline editable tag with a default value:
+An inline editable tag with a default value (edited in place from the React page editor):
 
 ```php
 <?= $this->MelisTag($this->idPage, 'static-html-1', 'html', '<h1>Accessible…</h1>') ?>

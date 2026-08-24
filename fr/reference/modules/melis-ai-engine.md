@@ -1,10 +1,10 @@
 # MelisAIEngine
 
-> Le moteur IA abstrait — contrat fournisseur, runtime agent/scénario, stockage des conversations, pont MCP/tools, et toutes les tables de base de données IA. Paquet `melisplatform/melis-ai-engine`.
+> Le moteur IA abstrait — contrat fournisseur, runtime agent/scénario, stockage des conversations, pont MCP/tools, toutes les tables de base de données IA, et les composants React de chat partagés qui animent le back-office v6. Paquet `melisplatform/melis-ai-engine`.
 
 ## Présentation
 
-MelisAIEngine est la clé de voûte de la suite MelisAI. Il définit le contrat fournisseur abstrait (`MelisAIEngineModelService`) qu'implémentent Claude et Gemini, exécute les agents au fil de workflows de scénario multi-étapes, gère le pont MCP/tool-calling, et possède toutes les tables `melis_ai_*` en base de données. L'interface back-office se trouve dans le module compagnon `MelisAI` ; ce module est uniquement la couche service et données.
+MelisAIEngine est la clé de voûte de la suite MelisAI. Il définit le contrat fournisseur abstrait (`MelisAIEngineModelService`) qu'implémentent Claude et Gemini, exécute les agents au fil de workflows de scénario multi-étapes, gère le pont MCP/tool-calling, et possède toutes les tables `melis_ai_*` en base de données. Il n'a **aucun outil autonome** propre — c'est le moteur de chat invisible du back-office. En v6 (React), il fournit également le composant React partagé **`AiChatContainer`** ainsi que le backend de chat `/melis/react-api/ai-engine/*` que le module `MelisAI` monte dans ses outils visibles.
 
 ## Activation
 
@@ -16,7 +16,7 @@ return [
 ];
 ```
 
-Dépendances Composer requises : `melisplatform/melis-core ^5.3` et `melisplatform/melis-document-upload ^5.3`. Au moins un module fournisseur (`MelisAIEngineClaude` ou `MelisAIEngineGemini`) doit être installé pour effectuer de vrais appels de modèle.
+Dépendances Composer requises : `melisplatform/melis-core` et `melisplatform/melis-document-upload`. Au moins un module fournisseur (`MelisAIEngineClaude` ou `MelisAIEngineGemini`) doit être installé pour effectuer de vrais appels de modèle ; sans fournisseur actif pour la société du modèle, le chat signale *« The AI company module is not active. »*
 
 ## Services principaux
 
@@ -68,7 +68,7 @@ if (strpos($company, 'Google') !== false) {
 }
 ```
 
-Pour ajouter un nouveau fournisseur (p. ex. OpenAI) : étendre `MelisAIEngineModelService`, implémenter les méthodes abstraites, l'enregistrer comme service, et ajouter une branche ici indexée sur le nom de la société.
+Pour ajouter un nouveau fournisseur (p. ex. OpenAI) : étendre `MelisAIEngineModelService`, implémenter les méthodes abstraites, l'enregistrer comme service, et ajouter une branche ici indexée sur le nom de la société. Les fournisseurs Ollama et OCI suivent le même contrat.
 
 ## Système MCP / tool-calling
 
@@ -97,19 +97,101 @@ Toutes les tables `melis_ai_*` sont gérées par ce module (`dbdeploy: true`) :
 | `melis_ai_daily_usage` | Comptage des tokens et des appels par modèle/agent/instance/jour. |
 | `melis_ai_conversation_state` | État de conversation persisté (`macs_key`, JSON, GC automatique). |
 
-## Exemple
+## Composants React de chat
 
-Afficher une boîte de chat liée à une instance IA existante depuis n'importe quelle vue `.phtml` :
+MelisAIEngine n'a **aucune brique** ni entrée de menu `/melis-react`. Pour le back-office React, il expose une bibliothèque de composants **en sources uniquement** sous `ui-react/src/`, importée par les consommateurs via l'alias Vite **`@melis-ai-engine`** (associé à `melis-ai-engine/ui-react/src`). Elle rend l'intégralité de la surface de chat ; le LLM réel est toujours fourni par un module fournisseur.
+
+| Export | Rôle |
+| --- | --- |
+| `AiChatContainer` (par défaut) | Composant orchestrateur : exécute toute la boucle `init → run → (continue×N) → validate`, détient l'état du chat, câble les sous-composants. **C'est celui à monter.** |
+| `ChatHistory`, `TypingIndicator`, `StepInterface` | Liste défilante des messages (markdown via `window.marked` si présent), indicateur de réflexion, cartes d'interface par étape. |
+| `ChatFormBox` | Barre de saisie du bas : zone de texte, envoi/validation, menu `+` → téléversement de fichier (`user_file_upload[]`) ou Médiathèque (`userMediaFiles[]`, MoxieManager), surcouche glisser-déposer. |
+| `ChatDebugPanel`, `DebugEntry` | Vue de débogage : payload de requête (→) et réponse brute du modèle (←) sous forme de blocs JSON (uniquement lorsque `debugMode`). |
+| `MelisPlanPanel`, `extractMelisPlan`, `looksLikeMelisPlan` | Rend un « plan Melis » structuré proposé par l'IA (p. ex. une liste de champs de formulaire) sous forme de tableau. |
+| `aiEngineInit/Run/Continue/Validate/Restart` | Client typé pour les endpoints `ai-engine` (§ Backend de chat). |
+| `parseResultActionString`, `dispatchResultAction`, `dispatchToolResults` | Dispatcher de navigation en boucle fermée `JS_ACTION` (§ Navigation en boucle fermée). |
+
+**Contrat de montage — `AiChatContainerProps` :**
+
+```tsx
+type AiChatContainerProps = {
+  maiInstanceId: string                        // required — e.g. "agenttool" or "newscontentcreator|42"
+  agentId?: number | null                      // override the instance's default agent
+  extraEntryParams?: Record<string, unknown>   // → extra_entry_param[key] context
+  entryParamForm?: Record<string, string>      // → entry_param_form[key]
+  debugMode?: boolean
+  exitParamArr?: ExitParamArr
+  showCloseButton?: boolean
+  needExitParam?: boolean
+  showHideButton?: boolean
+  showHeader?: boolean
+  clearSession?: boolean                        // clear the server session on init (fresh conversation)
+  autoRun?: boolean                             // start the agent immediately after init
+  initialMessage?: string                       // first user_chat when autoRun
+  onClose?: () => void
+  onHide?: () => void
+  className?: string
+  style?: React.CSSProperties
+}
+```
+
+Le conteneur plafonne la continuation à `MAX_CONTINUATION_HOPS = 20`. Pour ajouter un chat IA à un outil React, importez `AiChatContainer` et montez-le avec un `maiInstanceId` — aucun travail backend nécessaire, les endpoints existent déjà. Les consommateurs incrémentent une `key` sur l'élément monté pour forcer une nouvelle session serveur au relancement.
+
+## Où il apparaît
+
+Vous ne voyez jamais MelisAIEngine comme entrée de menu ; ses surfaces de chat apparaissent au sein du module **MelisAI**, qui monte le même `AiChatContainer` à trois endroits (seuls `maiInstanceId` / `agentId` diffèrent) :
+
+- **Assistant IA** — la surcouche d'assistant flottant (chat généraliste capable d'agir sur le back-office, lancé avec `autoRun`).
+- **Outil Chat Dev** — un bac à sable développeur pour lancer n'importe quel agent/instance et dialoguer avec lui.
+- **Onglet « Run » de l'agent** — tester un agent depuis l'outil des agents MelisAI (`maiInstanceId="agenttool"`).
+
+## Backend de chat — les endpoints `ai-engine`
+
+Les routes sont déclarées dans `config/module.config.php` (pas un `react-api.php`), alias de contrôleur `MelisAIEngine\Controller\React\MelisReactApiAiEngine` → `MelisReactApiAiEngineController`. Chaque action se protège avec `denyUnlessAuthenticated()` (401 sans identité MelisCore — aucun contrôle de capacité par outil, puisqu'il s'agit d'un moteur partagé). Enveloppe de réponse uniforme : `{ success, data, error? }`. Ces endpoints reflètent le `AIController` legacy (`/melis/MelisAIEngine/AI/*`) et appellent le même `MelisAIEngineAgentService`.
+
+| Méthode & URL | Fn client | Objet |
+| --- | --- | --- |
+| `GET /melis/react-api/ai-engine/init` | `aiEngineInit` | Valider instance→agent→modèle→fournisseur ; retourne `label`, `finalInstanceId`, `agentId`, `isFileUploadActivated`, `isMediaLibraryActivated`, `hasExitParameter` (ou `errorType`/`errorMessage`). |
+| `POST /melis/react-api/ai-engine/run` | `aiEngineRun` | Démarrer/faire avancer un tour. JSON pour le texte, multipart/form-data lorsque des fichiers sont joints → `runAgent()`. |
+| `POST /melis/react-api/ai-engine/continue` | `aiEngineContinue` | Reprendre un tour multi-sauts (`needs_continuation=true`) → `continueConversation(sessionId, continuationContext)`. |
+| `POST /melis/react-api/ai-engine/validate` | `aiEngineValidate` | Accepter la réponse de l'IA, avancer vers l'étape de paramètre de sortie, retourner `exitParams` pour le callback hôte → `validateAnswer()`. |
+| `POST /melis/react-api/ai-engine/restart` | `aiEngineRestart` | Effacer la session, retourner le même `finalInstanceId` prêt à être réutilisé. |
+
+Le `RunResult` inclut `chatHist`, `needs_continuation`, `session_id`, `continuation_context`, `payload`/`response` (débogage), `exitParams`, `tool_results`.
+
+**Tour texte minimal :**
+
+```ts
+import { aiEngineInit, aiEngineRun } from '@melis-ai-engine'
+
+const cfg = await aiEngineInit({ maiInstanceId: 'agenttool', clearSession: true })
+if (cfg.errorType) throw new Error(cfg.errorMessage)   // instance/agent/model/companyModule/exitParam
+
+const res = await aiEngineRun({
+  agentId:    cfg.agentId,
+  instanceId: cfg.finalInstanceId,
+  userText:   'Create a news article about our new store',
+})
+// res.chatHist, res.needs_continuation, res.session_id, res.tool_results …
+```
+
+## Navigation en boucle fermée
+
+Le moteur ne fait que **dispatcher** : `nav-actions.ts` analyse les chaînes de callback `JS_ACTION::action::k=v&…` extraites du `tool_results` d'une réponse et appelle `window.melisReactActionMap[action](args)`. Le **shell hôte (melis-core)** *enregistre* ces handlers et détient la navigation React-Router / la perception du DOM. Un handler peut retourner une observation `Promise<string>`, que `dispatchToolResults` attend et réinjecte comme `continuationContext.clientObservation` — ce qui ancre le tour de modèle suivant. Cela maintient découplés les deux bundles construits indépendamment : seul le contrat `window` les relie.
+
+## Exemple (view helper legacy)
+
+Le view helper classique rendu côté serveur fonctionne toujours pour les contextes non-React (`.phtml`) :
 
 ```php
-// Afficher la boîte de chat pour une instance nommée
+// Render the chat box for a named instance
 echo $this->AIChatViewHelper($maiInstanceId);
 ```
 
 Enregistrer un serveur MCP personnalisé et déclarer ses tools pour qu'un agent puisse les appeler :
 
 ```php
-// Dans la config d'un module — enregistrer le serveur MCP
+// In a module's config — register the MCP server
 'mcp' => [
     'servers' => [
         'my-mcp-server' => [
@@ -121,7 +203,7 @@ Enregistrer un serveur MCP personnalisé et déclarer ses tools pour qu'un agent
         ],
     ],
 ],
-// Déclarer le tool avec mcp: true
+// Declare the tool with mcp: true
 'plugins' => [
     'melisaiengine' => [
         'datas' => [
@@ -148,8 +230,9 @@ Enregistrer un serveur MCP personnalisé et déclarer ses tools pour qu'un agent
 | Pont MCP/tools | `vendor/melisplatform/melis-ai-engine/src/Service/MelisAIEngineMcpService.php` |
 | Stockage de conversation persisté | `vendor/melisplatform/melis-ai-engine/src/Service/MelisAIEngineConversationStore.php` |
 | Fonctions intégrées | `vendor/melisplatform/melis-ai-engine/src/Service/MelisAIEngineFunctionService.php` |
-| Contrôleur de chat | `vendor/melisplatform/melis-ai-engine/src/Controller/AIController.php` |
-| Plugins de type d'étape | `vendor/melisplatform/melis-ai-engine/src/Controller/Plugin/` |
+| Contrôleur de chat legacy | `vendor/melisplatform/melis-ai-engine/src/Controller/AIController.php` |
+| Backend React de chat | `vendor/melisplatform/melis-ai-engine/src/Controller/React/MelisReactApiAiEngineController.php` |
+| Bibliothèque React de chat partagée | `vendor/melisplatform/melis-ai-engine/ui-react/src/` (`AiChatContainer.tsx`, `api.ts`, `nav-actions.ts`…) |
 | Modèles de tables BDD | `vendor/melisplatform/melis-ai-engine/src/Model/Tables/` |
 | Config du module | `vendor/melisplatform/melis-ai-engine/config/module.config.php` |
 

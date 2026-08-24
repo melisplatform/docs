@@ -1,16 +1,19 @@
 # MelisCmsTags
 
-> Shared tag/taxonomy system for the CMS — create tags and associate content items with them.
-> Package `melisplatform/melis-cms-tags`.
+> Shared tag/taxonomy system for the CMS — the "labels" that content modules (e.g. News) hang their items off of, now with a native React back-office. Package `melisplatform/melis-cms-tags`.
 
 ## Purpose
 
-MelisCmsTags provides a **Tags manager** in the backoffice where editors create multilingual tags
-(title per language, optional picture and document, site-scoped) and view/remove the content items
-associated with each tag. Other modules (e.g. MelisCmsNews) plug into the association layer via a
-config declaration and a single service call, making their items taggable without any schema changes
-to the tag module itself. A front **List Tags** templating plugin is included to display a site's
+MelisCmsTags provides the platform's **tag (taxonomy) system**: multilingual tags (a title per
+language) that other modules associate their content with. Editors create and translate tags, see how
+many items use each tag, and delete unused ones. Other modules (e.g. MelisCmsNews) plug into the
+association layer via a config declaration and a single service call, making their items taggable
+without any schema change to the tag module. A front **List Tags** templating plugin displays a site's
 tags on the front office.
+
+In **Melis v6** the back-office is a **native full-React brick** rendered inside `/melis-react`, calling
+a module-owned `react-api` JSON layer. The server-side data model, service, tables, associations config
+and front plugin are unchanged from v5 — only the presentation and navigation layer moved to React.
 
 ## Enable it
 
@@ -22,8 +25,101 @@ return [
 ];
 ```
 
-Requires `melis-core` and `melis-cms` (`^5.3`), PHP `^8.1|^8.3`. The module ships with
-`dbdeploy: true` — its three tables are created automatically on first deploy.
+Requires `melis-core` and `melis-cms`. The module ships with `dbdeploy: true` — its three tables are
+created automatically on first deploy. The React brick appears in the back-office **only if the module
+is activated** (modular brick discovery).
+
+## Where it lives in the React back-office
+
+Left sidebar → **Site Tools** group → **Tags** (`fa-tag`). It opens as a top tab named **Tags**. The
+menu `forwardKey` `MelisCmsTags/TagsList` maps to the tree route `/melis-cms/tags` (`/melis-cms/tags/:id`
+for the editor), where the `TagsPage` component renders.
+
+The brick is a **native full-React** UI with a **New / Old toggle** (top-right): *New* is the React UI
+(default), *Old* renders the legacy tool in an iframe (`/melis/react-tool-page?key=tags_left_menu`).
+
+## Back-office — list and editor
+
+**One shell tab (`Tags`) with in-tool sub-tabs.** The list is the main view; opening or creating a tag
+adds an **edit sub-tab** (`subTabs: true`), so switching between open tags is instant.
+
+**The list** shows every tag on the platform, with:
+
+- **KPI cards** — Total · With associations · Without association (from the `stats` endpoint).
+- **Search** ("Search a tag…", matches id or a title in any language), **Reset filters**, a **Columns**
+  manager (hide/reorder), and an **Export** button (`.xlsx` via the host `window.MelisXLSX`, CSV fallback).
+- Sortable columns **ID / Title / Nb associations**, with per-row **edit** and **delete** actions.
+- A **+ New tag** button that opens a blank editor.
+
+![React Tags list — KPI cards (Total / With associations / Without association), search, Reset filters, Columns manager, Export, the New/Old toggle, "+ New tag", and rows showing ID / Title / Nb associations with edit and delete actions](/screenshots/react/melis-cms-tags/meliscmstags-tool-tags-list.png)
+
+**The editor** is a compact form (a tag is just a title per language): a **language switch**
+(English / Français…) fed by the `languages` endpoint, and a **Label** field for the selected language.
+All translations are held at once and saved together — **at least one non-empty title is required**.
+Deleting a tag is **refused while it still has associations**, protecting tagged content.
+
+![The React tag editor — a language switch (English / Français) and the per-language "LABEL" field with the "At least one title is required" hint](/screenshots/react/melis-cms-tags/meliscmstags-tool-tags-edit-texts.png)
+
+## Tagging content — the Tags picker
+
+Tags are meant to be *used* by other modules. In the **React News editor** (Site Tools → News → open an
+article), the settings sidebar shows a **TAGS** panel: a checklist of the available tags. Ticking tags
+and saving the article stores the associations, which then count toward each tag's **Nb associations**.
+
+![The TAGS panel inside the React News article editor — a checklist of tags (Art, Business, Design, Development, Education…) that tag the article](/screenshots/react/melis-cms-tags/meliscmstags-tooloverride-news-tags.png)
+
+That picker and its saving are owned by the **News** brick (it reads `GET /melis/react-api/news/tags`
+and writes the shared link table with `entity_type = 'NEWS'`); MelisCmsTags only owns the tag data and
+the shared `melis_cms_tag_entity` table. The panel appears only when MelisCmsTags is active.
+
+## React API — endpoints
+
+There is **no `config/react-api.php`**: the routes are declared **inline in `config/module.config.php`**
+as the child node `react-api-cms-tags` under `melis-backoffice`, so the URLs live under
+**`/melis/react-api-cms-tags`** (module-owned, *not* the shared `/melis/react-api/…` namespace).
+Controller: `MelisCmsTags\Controller\MelisCmsTagsReactApiController`. All responses use the
+`{ success, data, error }` contract; requests send `X-Requested-With: XMLHttpRequest` and
+`credentials: 'include'`.
+
+| Method & URL | Action | Purpose |
+| --- | --- | --- |
+| `GET /melis/react-api-cms-tags` | `list` | List tags (keyset: `search`, `limit`, `sort`, `dir`, `after`, optional `lang`) → `{items,total,nextCursor}`; each item has `id`, `title`, `associationsCount` |
+| `GET /melis/react-api-cms-tags/stats` | `stats` | KPI `{total, withAssociations, orphan}` |
+| `GET /melis/react-api-cms-tags/languages` | `languages` | CMS languages `{languages:[{id,locale,name}]}` (drives the editor language switch) |
+| `GET /melis/react-api-cms-tags/:id` | `get` | One tag `{id, creationDate, titles:{langId:title}, associationsCount}` |
+| `POST /melis/react-api-cms-tags/save` | `save` | Create / update (`{id?, titles:{langId:title}}`) → `{id}` |
+| `DELETE /melis/react-api-cms-tags/delete/:id` | `delete` | Delete a tag (refused if it still has associations) |
+
+> Route order matters: `stats` / `languages` / `save` are declared **before** the `:id` catch-all so
+> they resolve to their own actions rather than `get`.
+
+The controller mixes direct parameterised keyset SQL (list, stats) with the module's tables and service
+(`TagTable`, `TagTextsTable`, `TagEntityTable` for `get`/`save`; `MelisCmsTagsService` for `delete` —
+`getAssociationsByTagId()` blocks the delete, then `deleteTagById()` + `TagTextsTable::deleteByField()`
+clean up). `save` reproduces the legacy rules (≥1 non-empty title, ≤255 chars, per-language uniqueness)
+and fires the same events (`meliscmstags_save_tag_end`, `meliscmstags_delete_tag_end`).
+
+Example (`tags-api.ts`):
+
+```ts
+const BASE = '/melis/react-api-cms-tags'
+await apiFetch<TagListResult>(`${BASE}?search=art&limit=25&sort=id&dir=desc`) // list
+await apiFetch<TagDetail>(`${BASE}/42`)                                       // one tag
+await apiFetch<{ id: number }>(`${BASE}/save`, {                              // save all translations
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ id: null, titles: { 1: 'Art', 2: 'Art' } }),        // langId → title
+})
+await apiFetch<null>(`${BASE}/delete/42`, { method: 'DELETE' })              // delete
+```
+
+## Capabilities
+
+Declared in `config/react.capabilities.php` under the menu node **`tags_left_menu`** (the renderable tool
+node; `MelisCmsTags\Module::getConfig()` merges the file). Actions: `list` · `create` · `edit` · `delete`
+· `export`. In React, `TagsPage`'s `can(cap)` reads `window.MelisCan('tags_left_menu', cap)` to gate the
+**+ New tag** button, row edit/delete and Export. Server-side, every action calls `denyUnlessAccess()`
+(auth + `MelisCoreRights::canAccess('tags_left_menu')` → 401/403); here the capabilities key and the
+access-guard `MELIS_KEY` coincide (`tags_left_menu`).
 
 ## Key services
 
@@ -31,30 +127,7 @@ Requires `melis-core` and `melis-cms` (`^5.3`), PHP `^8.1|^8.3`. The module ship
 | --- | --- |
 | `MelisCmsTagsService` | Full tag CRUD plus the association API. Every method fires `*_start` / `*_end` events via `MelisGeneralService`. |
 
-Table gateway aliases: `TagTable`, `TagTextsTable`, `TagEntityTable` (all registered in
-`module.config.php`).
-
-## Backoffice
-
-The **Tags** tool is accessible from the left menu under **MelisCms → Tags** (`fa-tag`). It opens
-on a filterable DataTable of all tags (columns: ID, Title, Nb associations, site; with edit and
-delete row actions) and an **Add tag** button. The tag editor has two tabs:
-
-| Tab | Content |
-| --- | --- |
-| Texts | Per-language title (language selector + Title field per language) |
-| Associations | Table of content items linked to this tag (ID, Entity ID, Title, Entity type); delete-association action |
-
-Upload modals allow one picture and one document per tag; files land in `/media/tags/`. The two
-DataTables are defined in `app.tools.php`: `tags_list_table` (`#tagsList`) for the tag list and
-`tags_list_association` (`#tagsListAssociations`) for the per-tag association grid.
-
-### Controllers
-
-| Controller | Responsibilities |
-| --- | --- |
-| `TagsListController` | Tag list screen: render, filters (site / search / limit), table JSON (`renderListData`), row actions (info / edit / delete), `deleteTag` |
-| `TagController` | Tag editor: header, Texts tab, Associations tab, `save`, association grid JSON (`renderListAssociationsData`), `deleteAssociation`, reusable tag-select (`renderTagSelect` / `getSelectTags`) |
+Table gateway aliases: `TagTable`, `TagTextsTable`, `TagEntityTable` (registered in `module.config.php`).
 
 ## Front office
 
@@ -65,22 +138,11 @@ DataTables are defined in `app.tools.php`: `tags_list_table` (`#tagsList`) for t
 | Config plugin key | `tags` · XML DB key `TagsList` |
 | Config file | `config/plugins/ListPublicationsPlugin.config.php` |
 | Front view | `MelisCmsTags/listtags` |
-| Settings tabs | **Template** (template select + site select) · **Filters** (column / order / date-min / date-max / search) |
+| Settings tabs | **Template** (template + site select) · **Filters** (column / order / date-min / date-max / search) |
 
-> **Naming drift notice.** The plugin class lives in `ListPublicationsPlugin.php`, and the shipped
-> Phtml views are `listpublications.phtml` / `showpublication.phtml`. This is a historical artefact
-> — the live feature is the **List Tags** plugin described above.
-
-## Form elements (tag pickers for other modules)
-
-Registered under `form_elements.factories` in `module.config.php`.
-
-| Element type | Factory | Use |
-| --- | --- | --- |
-| `TagsSelect` | `TagSelectFactory` | Multi-select tag picker |
-| `TagsSelectSingle` | `TagSelectSingleFactory` | Single tag picker |
-| `TagsFondsSelect` | `TagFondsSelectFactory` | Tag-group ("fonds") picker |
-| `MelisCmsSiteTagSelect` | `MelisCmsSiteTagSelectFactory` | Site-scoped tag picker |
+> **Naming drift.** The plugin class lives in `ListPublicationsPlugin.php` and the shipped Phtml views
+> are `listpublications.phtml` / `showpublication.phtml` — a historical artefact; the live feature is
+> the **List Tags** plugin above.
 
 ## Database tables
 
@@ -92,7 +154,7 @@ Base structure in `install/sql/setup_structure.sql`; migrations in `install/dbde
 | `melis_cms_tag_texts` | Per-language texts: `tag_text_id`, `tag_id`, `tag_title`, `tag_lang_id` |
 | `melis_cms_tag_entity` | Tag ↔ content item link: `id`, `tag_id`, `entity_id`, `entity_type` (e.g. `NEWS`) |
 
-## Example
+## Service example
 
 ```php
 $tags = $this->getServiceManager()->get('MelisCmsTagsService');
@@ -108,16 +170,16 @@ $tags->saveTagEntity([$tagId1, $tagId2], $entityId, 'NEWS'); // (re)attach a tag
 $set   = $tags->loadTagByEntityIdType($entityId, 'NEWS');    // tags of one item
 $items = $tags->loadEntityByTagsId($tagIds, 'NEWS');         // items carrying given tags
 $tags->deleteEntities($entityId, 'NEWS');                    // clear an item's tags
-$assoc = $tags->getAssociationsByTagId($tagId, $langId);     // items associated to a tag (grid)
+$assoc = $tags->getAssociationsByTagId($tagId, $langId);     // items associated to a tag
 ```
 
-`saveTagEntity()` deletes the entity's existing links then re-saves the supplied set — call it from
-a content module's save flow to keep its tags in sync.
+`saveTagEntity()` deletes the entity's existing links then re-saves the supplied set — call it from a
+content module's save flow to keep its tags in sync.
 
 ## Making a module taggable (config-driven associations)
 
-Declare the mapping under `plugins.melis_cms_tag.datas.associations` in
-`config/associations.config.php`. The shipped MelisCmsNews example:
+Declare the mapping under `plugins.melis_cms_tag.datas.associations` in `config/associations.config.php`.
+The shipped MelisCmsNews example:
 
 ```php
 'associations' => [
@@ -136,24 +198,24 @@ Declare the mapping under `plugins.melis_cms_tag.datas.associations` in
 ],
 ```
 
-Then call `saveTagEntity()` in the content module's save action and add a `TagsSelect` (or
-`TagsSelectSingle`) form element to its editor form spec.
+Then call `saveTagEntity()` in the content module's save action. In the React News brick this is wired
+via its own `/melis/react-api/news/tags` surface; MelisCmsTags just owns the tag data and the shared
+link table.
 
 ## Key files
 
 | Concern | Path |
 | --- | --- |
-| Module config (routes, services, form elements) | `vendor/melisplatform/melis-cms-tags/config/module.config.php` |
-| Backoffice tool tree + editor tabs | `vendor/melisplatform/melis-cms-tags/config/app.interface.php` |
-| DataTable configs | `vendor/melisplatform/melis-cms-tags/config/app.tools.php` |
+| Module config (routes, react-api routes inline, services, form elements) | `vendor/melisplatform/melis-cms-tags/config/module.config.php` |
+| React capabilities | `vendor/melisplatform/melis-cms-tags/config/react.capabilities.php` |
 | Association mapping | `vendor/melisplatform/melis-cms-tags/config/associations.config.php` |
 | List Tags plugin config | `vendor/melisplatform/melis-cms-tags/config/plugins/ListPublicationsPlugin.config.php` |
+| React API controller | `vendor/melisplatform/melis-cms-tags/src/Controller/MelisCmsTagsReactApiController.php` |
 | Main service | `vendor/melisplatform/melis-cms-tags/src/Service/MelisCmsTagsService.php` |
-| Controllers | `vendor/melisplatform/melis-cms-tags/src/Controller/` |
 | Front plugin | `vendor/melisplatform/melis-cms-tags/src/Controller/Plugin/ListPublicationsPlugin.php` |
 | Table gateways | `vendor/melisplatform/melis-cms-tags/src/Model/Tables/` |
-| Form element factories | `vendor/melisplatform/melis-cms-tags/src/Form/Factory/` |
-| Listener (active) | `vendor/melisplatform/melis-cms-tags/src/Listener/TagsFlashMessengerListener.php` |
+| React brick source | `vendor/melisplatform/melis-cms-tags/ui-react/src/` (`TagsPage`, `tags-api.ts`, `ViewToggle`, `ExportModal`) |
+| React brick build + manifest | `vendor/melisplatform/melis-cms-tags/public/ui-react/brick.js` · `brick.manifest.json` |
 | Install SQL | `vendor/melisplatform/melis-cms-tags/install/sql/setup_structure.sql` |
 | DB migrations | `vendor/melisplatform/melis-cms-tags/install/dbdeploy/` |
 

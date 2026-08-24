@@ -1,17 +1,21 @@
 # MelisCommerce
 
-> Framework e-commerce complet pour MelisPlatform — catalogue, clients, panier/checkout/commandes, coupons,
-> livraison et SEO. Paquet `melisplatform/melis-commerce`.
+> Framework e-commerce complet pour MelisPlatform — catalogue, clients, panier/checkout/commandes, coupons, livraison et SEO — avec un back-office React. Paquet `melisplatform/melis-commerce`.
 
 ## Présentation
 
 MelisCommerce ajoute une couche commerce complète à un site Melis : un catalogue (produits, variantes,
 attributs, catégories, prix, stock), un modèle client B2B (comptes + contacts), le pipeline
 panier/checkout/commande, des coupons, des devises, la livraison, les retours, les documents et le SEO. Il
-embarque une suite de gestion en back-office et une boutique front office construite entièrement à
-partir de plugins de templating déposables. La couche de données utilise **59 tables `melis_ecom_*`**,
-**26 services**, **10 entités riches** et **33 listeners** ; l'accès aux données passe par Eloquent
-(bundled `illuminate/database`), encapsulé par des services événementiels à la façon Melis.
+embarque une suite de gestion en back-office et une boutique front office construite à partir de plugins de
+templating déposables. La couche de données utilise **59 tables `melis_ecom_*`**, **26 services**,
+**10 entités riches** et **33 listeners** ; l'accès aux données passe par Eloquent (bundled
+`illuminate/database`), encapsulé par des services événementiels à la façon Melis.
+
+En Melis v6, la logique métier est inchangée ; la **couche d'affichage** est un **back-office React**
+(`/melis-react`). MelisCommerce embarque **un unique bundle multi-brick** exposant **13 outils React natifs**,
+chacun adossé à des endpoints JSON sous `/melis/react-api/…`. Chaque outil conserve un basculement **Nouveau / Ancien**
+qui lui est propre, pour vous permettre de revenir à l'écran legacy classique dans une iframe.
 
 ## Activation
 
@@ -23,9 +27,40 @@ return [
 ];
 ```
 
-Requiert `melisplatform/melis-core ^5.2`. Les tables de base de données sont provisionnées
-automatiquement par MelisDbDeploy (deltas sous `install/dbdeploy/`). Le module est proposé par
-l'installeur Melis en tant que composant optionnel.
+Requiert `melisplatform/melis-core`. Les tables de base de données sont provisionnées automatiquement par
+MelisDbDeploy (deltas sous `install/dbdeploy/`) ; le module est proposé par l'installeur Melis en tant que
+composant optionnel. Les outils React n'apparaissent dans le back-office que lorsque MelisCommerce est actif
+(découverte via `GET /melis/react-api/react-modules`).
+
+## Le back-office React — un bundle, treize outils
+
+Le bundle (`public/ui-react/brick.js` + `brick.manifest.json`) déclare 13 outils qui s'auto-enregistrent dans
+`brick.tsx`. Tous sont nativement full-React ; chacun affiche un `ViewModeToggle` + `LegacyFrame` partagés,
+de sorte que *Ancien* monte l'outil classique dans une iframe (`/melis/react-tool-page?key=<melisKey>`). Les
+sept outils « entité » définissent `subTabs: true` (l'ouverture d'un enregistrement ajoute un sous-onglet) ;
+les 13 sont `persistent`.
+
+![La section MelisCommerce dans la barre latérale React — les 13 outils commerce](/screenshots/react/melis-commerce/meliscommerce-menu-tools-selector.png)
+
+| Id du brick | Route | Libellé | melisKey |
+| --- | --- | --- | --- |
+| `commerce-accounts` | `/melis-commerce/clients-list` | Comptes | `meliscommerce_clients_list_page` |
+| `commerce-contacts` | `/melis-commerce/contact-list` | Contacts | `meliscommerce_contact_list_page` |
+| `commerce-catalog` | `/melis-commerce/categories` | Catalogues | `meliscommerce_categories_page` |
+| `commerce-products` | `/melis-commerce/product-list` | Produits | `meliscommerce_product_list_container` |
+| `commerce-orders` | `/melis-commerce/order-list` | Commandes | `meliscommerce_order_list_page` |
+| `commerce-coupons` | `/melis-commerce/coupon-list` | Coupons | `meliscommerce_coupon_list_page` |
+| `commerce-attributes` | `/melis-commerce/attribute-list` | Attributs | `meliscommerce_attribute_list_page` |
+| `commerce-countries` | `/melis-commerce/country-list` | Pays | `meliscommerce_country_list_container` |
+| `commerce-languages` | `/melis-commerce/language-list` | Langues commerce | `meliscommerce_language_list_container` |
+| `commerce-currencies` | `/melis-commerce/currency-lists` | Devises | `meliscommerce_currency_conf` |
+| `commerce-order-status` | `/melis-commerce/order-status-lists` | Statuts de commande | `meliscommerce_order_status_tool_page` |
+| `commerce-clients-groups` | `/melis-commerce/clients-group-list` | Groupes clients | `meliscommerce_clients_group_tool_container` |
+| `commerce-settings` | `/melis-commerce/settings` | Paramètres commerce | `meliscommerce_settings_page` |
+
+> **Règle générale :** construisez le **catalogue** (attributs → catalogues → produits/variantes), gérez les
+> **clients** (comptes + contacts), puis faites tourner le pipeline de **commande** (commandes + assistant de
+> checkout + coupons), le tout adossé aux listes de référence commerce.
 
 ## Modèle objet
 
@@ -40,15 +75,107 @@ l'installeur Melis en tant que composant optionnel.
 | **Basket** | Anonyme (identifié par `clientKey`) ou persistant (lié à un compte) ; fusion à la connexion. |
 | **Order** | Créée au statut `-1` (temporaire) lors du checkout ; passe à `1` (Nouvelle commande) après paiement. |
 
+## Comptes & contacts
+
+**Comptes** (`/melis-commerce/clients-list`) gère les clients B2B : la liste dispose de la recherche, de
+filtres par statut/groupe, d'un gestionnaire de colonnes, de l'export et de l'**import** CSV. L'ouverture
+d'un compte se fait dans un sous-onglet avec les onglets **Propriétés**, **Entreprise**, **Contacts**
+(lier/délier, définir par défaut), **Adresses**, **Commandes** (historique) et **Fichiers**.
+
+![La liste des comptes — filtres, gestionnaire de colonnes et import CSV](/screenshots/react/melis-commerce/meliscommerce-tools-accounts-list.png)
+
+![Éditeur de compte — onglet Propriétés (statut, stratégie de nom, groupe, pays, tags)](/screenshots/react/melis-commerce/meliscommerce-tools-accounts-new-tab-properties.png)
+
+![Éditeur de compte — onglet Contacts (lier / délier / par défaut)](/screenshots/react/melis-commerce/meliscommerce-tools-accounts-new-tab-contacts.png)
+
+**Contacts** (`/melis-commerce/contact-list`) gère les personnes individuelles. L'éditeur comporte les
+onglets **Information**, **Adresse** et **Association** (lier/délier un contact à des comptes, définir celui
+par défaut). Les contacts sont adossés à `MelisComContactService` ; les comptes à `MelisComClientService`.
+
+![Éditeur de contact — onglet Association (lier / délier des comptes)](/screenshots/react/melis-commerce/meliscommerce-tools-contacts-edit-tab-association.png)
+
+## Catalogues, produits & variantes
+
+**Catalogues** (`/melis-commerce/categories`) est un **arbre** de catégories réorganisable par glisser-déposer ;
+une catégorie possède les onglets **Propriétés**, **SEO** et **Produits** (réorganisables).
+
+![L'arbre de catégories du catalogue (React)](/screenshots/react/melis-commerce/meliscommerce-tools-catalogs-treeview.png)
+
+**Produits** (`/melis-commerce/product-list`) liste les produits avec filtres, duplication et export.
+L'éditeur de produit comporte les onglets **Propriétés**, **Texte** (par langue), **Variantes**, **SEO** et
+**Prix**. L'onglet **Variantes** est le plus riche : chaque variante possède ses propres Propriétés, SEO,
+Prix, Stocks et Associations, ainsi que des médias.
+
+![La liste des produits (React)](/screenshots/react/melis-commerce/meliscommerce-tools-products-list.png)
+
+![Éditeur de produit — onglet Variantes (prix, stocks, SEO, associations par variante)](/screenshots/react/melis-commerce/meliscommerce-tools-products-edit-tab-variants.png)
+
+![Éditeur de produit — onglet Prix](/screenshots/react/melis-commerce/meliscommerce-tools-products-edit-tab-prices.png)
+
+**Attributs** (`/melis-commerce/attribute-list`) gère les caractéristiques typées des produits : les onglets
+de l'éditeur sont **Propriétés** (référence, type, statut, visible, recherchable), **Libellés** (par langue)
+et **Valeurs** (valeurs avec traductions typées).
+
+![Éditeur d'attribut — onglet Valeurs (valeurs avec traductions typées)](/screenshots/react/melis-commerce/meliscommerce-tools-attributes-edit-tab-values.png)
+
+## Commandes & assistant de checkout
+
+**Commandes** (`/melis-commerce/order-list`) dispose de filtres par statut et de l'export. Les onglets de
+l'éditeur par commande sont **Propriétés**, **Panier** (lecture seule), **Adresses**, **Paiement** (lecture
+seule), **Livraison**, **Messages** et **Retours** — auxquels s'ajoute **Factures** lorsque
+[MelisCommerceOrderInvoice](/reference/modules/melis-commerce-order-invoice) est actif.
+
+![La liste des commandes (React)](/screenshots/react/melis-commerce/meliscommerce-tools-order-list.png)
+
+![Éditeur de commande — onglet Propriétés](/screenshots/react/melis-commerce/meliscommerce-tools-order-edit-tab-properties.png)
+
+**Nouvelle commande** ouvre un **assistant de checkout guidé en 7 étapes**
+(`contact → compte → produits → adresses → récapitulatif → paiement → confirmation`), adossé à une session
+de checkout côté serveur (endpoints sous `/orders/checkout/*`) qui reprend là où vous vous étiez arrêté.
+
+![L'assistant de checkout Nouvelle commande — étapes contact / compte / produits](/screenshots/react/melis-commerce/meliscommerce-tools-order-newordertunnel-1.png)
+
+![L'assistant de checkout — étape adresses / récapitulatif](/screenshots/react/melis-commerce/meliscommerce-tools-order-newordertunnel-2.png)
+
+## Coupons
+
+**Coupons** (`/melis-commerce/coupon-list`) gère les codes de réduction (% ou montant). Onglets de l'éditeur :
+**Propriétés**, **Assigner un compte** (clients), **Assigner un produit** et **Commandes** (historique
+d'utilisation). Adossé à `MelisComCouponService` ; la remise intégrée est elle-même un listener sur
+`meliscommerce_service_get_item_price_end`.
+
+![Éditeur de coupon — onglet Assigner un compte](/screenshots/react/melis-commerce/meliscommerce-tools-coupons-edit-tab-assignedclients.png)
+
+## Outils de référence commerce
+
+Petits outils « à la façon paramètres » — listes sur une seule page avec modales d'ajout/édition ou un
+formulaire unique :
+
+| Outil | Route | Gère |
+| --- | --- | --- |
+| Pays | `/melis-commerce/country-list` | Liste des pays commerce (ajout/édition) |
+| Langues commerce | `/melis-commerce/language-list` | Langues commerce (liste + modale) |
+| Devises | `/melis-commerce/currency-lists` | Devises (liste + modale, **définir par défaut**) |
+| Statuts de commande | `/melis-commerce/order-status-lists` | Statuts ; l'éditeur comporte Propriétés (couleur) + Libellés |
+| Groupes clients | `/melis-commerce/clients-group-list` | Groupes de clients (liste + modale) |
+| Paramètres commerce | `/melis-commerce/settings` | Page de config unique — onglets Propriétés + Comptes |
+
+![La liste des statuts de commande (React)](/screenshots/react/melis-commerce/meliscommerce-tools-orderstatus-list.png)
+
+![Paramètres commerce — onglet Propriétés (seuil d'alerte stock, stratégie de nom de compte)](/screenshots/react/melis-commerce/meliscommerce-tools-settings-tab-properties.png)
+
+Les paramètres commerce contiennent le seuil global d'alerte stock et la stratégie de nom de compte (`sa_type`).
+
 ## Services principaux
 
 Tous les services étendent `MelisComGeneralService` et sont enregistrés dans `config/module.config.php`.
 Chaque méthode publique est encadrée par des événements `meliscommerce_service_*_start` / `*_end` (voir
-[Événements & listeners](#événements--listeners)).
+[Événements & listeners](#événements--listeners)). Les contrôleurs React ne font que valider les entrées et
+mettre en forme le JSON — le vrai travail reste dans ces services.
 
 | Alias de service | Rôle |
 | --- | --- |
-| `MelisComProductService` | `getProductById`, `getProductList` → entité `MelisProduct` |
+| `MelisComProductService` | `getProductById`, `getProductList` → `MelisProduct` |
 | `MelisComVariantService` | `getVariantById`, `getVariantListByProductId`, `getVariantBySKU`, `getMainVariantByProductId` → `MelisVariant` |
 | `MelisComCategoryService` | `getCategoryById`, `getCategoryListById(Recursive)` → `MelisCategory` |
 | `MelisComAttributeService` | `getAttributeById`, `getAttributes` → `MelisAttribute` |
@@ -71,7 +198,7 @@ Chaque méthode publique est encadrée par des événements `meliscommerce_servi
 | `MelisComDocumentService` | `getDocumentById`, `getDocumentsByRelation` → `MelisDocument` |
 | `MelisComDuplicationService` | Duplication de produits / variantes |
 | `MelisComLinksService` | Constructeur de liens commerce front office |
-| `MelisComCacheService` | Cache commerce (`commerce_big_services` ; préfixes de clés `product-/category-/variant-/document-/attribute-`) |
+| `MelisComCacheService` | Cache commerce (`commerce_big_services`) |
 | `MelisComHead` | Aide SEO head (`updateTitleAndDescription`) |
 | `MelisComGeneralService` | Classe de base ; helpers : `getTableColumns`, `getEcomLang`, `getFrontPluginLangId` |
 
@@ -85,23 +212,22 @@ Chaque méthode publique est encadrée par des événements `meliscommerce_servi
 4. pays général + groupe général
 5. (pour une variante) dégradation vers le prix du **produit**
 
-Le stock est par **variante par pays** (`melis_ecom_variant_stock`). Lorsqu'une commande fait descendre
-le stock sous le seuil, l'e-mail `VARIANTSLOWSTOCK` est envoyé aux destinataires configurés.
+Le stock est par **variante par pays** (`melis_ecom_variant_stock`). Lorsqu'une commande fait descendre le
+stock sous le seuil, l'e-mail `VARIANTSLOWSTOCK` est envoyé aux destinataires configurés.
 
 ## Pipeline de checkout
 
-Deux phases dans `MelisComOrderCheckoutService` :
+Deux phases dans `MelisComOrderCheckoutService` (l'assistant React pilote la même logique serveur) :
 
-**Phase 1 — `checkoutStep1_prePayment($clientId)`**
-Valide le panier et les adresses, calcule tous les coûts et la livraison, génère la référence de
-commande, puis appelle `MelisComOrderService::saveOrder()`. La commande est sauvegardée avec
-`ord_status = -1` (temporaire). Déclenche `meliscommerce_service_checkout_step1_prepayment_start/_end` et
-`…_save_success` (porte le nouvel `orderId`).
+**Phase 1 — `checkoutStep1_prePayment($clientId)`** valide le panier et les adresses, calcule tous les coûts
+et la livraison, génère la référence de commande, puis appelle `MelisComOrderService::saveOrder()`. La
+commande est sauvegardée avec `ord_status = -1` (temporaire). Déclenche
+`meliscommerce_service_checkout_step1_prepayment_start/_end` et `…_save_success` (porte le nouvel `orderId`).
 
-**Phase 2 — `checkoutStep2_postPayment()`**
-Appelée après le retour de la passerelle de paiement. `MelisComPostPaymentService::processPostPayment()`
-enregistre la transaction dans `melis_ecom_order_payment` et fait passer la commande du statut `-1`
-vers un statut réel (ex. `1` = Nouvelle commande). Déclenche `meliscommerce_service_checkout_step2_postpayment_start/_end`.
+**Phase 2 — `checkoutStep2_postPayment()`** est appelée après le retour de la passerelle.
+`MelisComPostPaymentService::processPostPayment()` enregistre la transaction dans `melis_ecom_order_payment`
+et fait sortir la commande du statut `-1` vers un statut réel. Déclenche
+`meliscommerce_service_checkout_step2_postpayment_start/_end`.
 
 **Statuts de commande :** `-1` temporaire · `1` Nouvelle commande · `2` En attente · `3` Expédiée · `4` Livrée ·
 `5` Annulée · `6` Erreur de paiement.
@@ -114,10 +240,8 @@ nommés (construits par `makeArrayFromParameters` via réflexion) et la clé `re
 - listener `_start` : modifie les entrées avant l'exécution du traitement.
 - listener `_end` : modifie `$params['results']` avant que l'appelant ne le reçoive.
 
-C'est le mécanisme d'extension principal — aucun sous-classement nécessaire. La remise de coupon intégrée
-est elle-même un listener sur `meliscommerce_service_get_item_price_end`.
-
-Les 33 listeners intégrés se répartissent en quatre familles :
+C'est le mécanisme d'extension principal — aucun sous-classement nécessaire. Les 33 listeners intégrés se
+répartissent en quatre familles :
 
 | Famille | Exemples |
 | --- | --- |
@@ -126,23 +250,24 @@ Les 33 listeners intégrés se répartissent en quatre familles :
 | Checkout / tarification / stock | `…CheckoutCouponListener`, `…CouponProductPriceListener`, `…ShipmentCostListener`, `…PostPaymentListener`, `…VariantCheckLowStockListener` |
 | Routage SEO front office | `…SEOReformatToRoutePageUrlListener`, `…SEODispatchRouterCommerceUrlListener`, `…SEOMetaPageListener` |
 
-## Back-office
+## API React & capacités
 
-Le back-office commerce complet se trouve sous la section de menu de gauche **MelisCommerce**.
+Toutes les routes sont des routes enfants de `melis-react-api` (fusionnées depuis `config/react-api.php`) :
+**13 contrôleurs invokables** dans `src/Controller/ReactApi/`, **184 routes** sous `/melis/react-api/…`. Le
+contrat de réponse est partout `{ success, data, error? }` ; chaque action appelle d'abord
+`denyUnlessAccess()` (auth + `MelisCoreRights::canAccess(<melisKey>)`, 401/403). Chaque outil entité expose
+grosso modo `GET /<tool>` (liste keyset), `/<tool>/stats`, `/<tool>/options`, `POST /<tool>/save`,
+`DELETE /<tool>/delete/:id`, `GET /<tool>/:id`, plus des sous-ressources propres à l'outil (ex. Commandes
+ajoute l'assistant complet `/orders/checkout/*`).
 
-| Entrée de menu | Contrôleur | Gère |
-| --- | --- | --- |
-| Catalogues | `MelisComCategory(List)` | Arbre glisser-déposer catalogue / catégorie ; traductions, disponibilité par pays, SEO |
-| Produits | `MelisComProduct(List)` | Produits → variantes, prix, textes, SEO, images |
-| Comptes | `MelisComClient(List)` | Comptes B2B (entreprise, groupe, adresses, contacts, commandes, fichiers) |
-| Contacts | `MelisComContact` | Personnes ; import/export CSV ; liables à plusieurs comptes |
-| Commandes | `MelisComOrder(List)` + `MelisComOrderCheckout` | Commandes + tunnel de création BO en 7 étapes ; statuts ; retours |
-| Coupons | `MelisComCoupon(List)` | Coupons de réduction (% ou montant ; par compte / produit) |
-| Attributs | `MelisComAttribute(List)` | Attributs + valeurs typées et traduisibles |
-| Pays / Langues commerce / Devises / Statuts de commande / Groupes clients | `MelisComCountry` / `MelisComLanguage` / `MelisComCurrency` / `MelisComOrderStatus` / `MelisComClientsGroup` | Données de référence (liste + modal d'édition) |
-| Paramètres commerce | `MelisComSettings` | Seuil global d'alerte stock ; stratégie de nom de compte (`sa_type`) |
+> ⚠ Les langues commerce sont dans l'espace de noms `/commerce-languages` (et non `/languages`) car l'outil
+> Langues du cœur possède déjà `/languages` sous le parent partagé `melis-react-api`.
 
-Widgets du tableau de bord : `OrdersNumber`, `OrderMessages`, `SalesRevenue`.
+`config/react.capabilities.php` déclare une entrée `melisReactToolCapabilities` par outil, clée sous son
+melisKey. Ce sont des **indications d'UI déclaratives en autorisation-par-défaut** — elles pilotent l'arbre
+de cases à cocher Utilisateurs → Droits et permettent à React de masquer onglets/boutons via `useCaps(...)`
+— mais il n'existe **pas encore de `denyUnlessCan()` côté serveur** ; seul `denyUnlessAccess()` sur le
+melisKey de l'outil protège l'API. Traitez les capacités comme des indications d'UI, pas comme de la sécurité.
 
 ## Front office
 
@@ -180,16 +305,9 @@ $prdSrv   = $sm->get('MelisComProductService');
 $varSrv   = $sm->get('MelisComVariantService');
 $priceSrv = $sm->get('MelisComPriceService');
 
-// getProductById($productId, $langId = null, $countryId = null, $groupId = -1, $docType = null, $docSubType = [])
 $product = $prdSrv->getProductById($prdId, $langId, $countryId);  // → MelisProduct
-$texts   = $product->getTexts();       // textes typés (TITLE, …) par langue
-$cats    = $product->getCategories();  // catégories auxquelles le produit appartient
-
-// getMainVariantByProductId($productId, $langId = null, $countryId = null, $groupId = 1)
 $variant = $varSrv->getMainVariantByProductId($prdId, $langId, $countryId);  // → MelisVariant
-
-// getItemPrice($itemId, $countryId, $groupId, $type = 'variant', array $data = [])
-$price = $priceSrv->getItemPrice($variant->getId(), $countryId, $groupId, 'variant');
+$price   = $priceSrv->getItemPrice($variant->getId(), $countryId, $groupId, 'variant');
 // $price['price'] (net), $price['price_currency'], $price['price_details']
 ```
 
@@ -199,36 +317,17 @@ $price = $priceSrv->getItemPrice($variant->getId(), $countryId, $groupId, 'varia
 $basketSrv   = $sm->get('MelisComBasketService');
 $checkoutSrv = $sm->get('MelisComOrderCheckoutService');
 
-// addVariantToBasket($variantId, $quantity, $clientId, $clientKey = null)
 $basketSrv->addVariantToBasket($variantId, 1, $clientId);
-
-// Fusionner un panier anonyme après connexion
 $basketSrv->transferAnonymousBasketToPersistentBasket($clientKey, $clientId);
 
-// Phase 1 — crée la commande au statut -1 (temporaire)
-$step1 = $checkoutSrv->checkoutStep1_prePayment($clientId);
+$step1 = $checkoutSrv->checkoutStep1_prePayment($clientId);  // commande au statut -1
 // $step1['orderId'] — à transmettre à la passerelle de paiement
-
-// Phase 2 — après le retour de la passerelle ; enregistre le paiement, fait sortir la commande du -1
-$step2 = $checkoutSrv->checkoutStep2_postPayment();
-```
-
-**Authentifier un client front office**
-
-```php
-$auth = $sm->get('MelisComAuthenticationService');
-$res  = $auth->login($email, $password, $rememberMe);  // login($email, $password, $rememberMe = false)
-if ($res['success']) {
-    $personId = $auth->getPersonId();   // contact connecté (cper_id)
-    $clientId = $auth->getClientId();   // compte sélectionné (cli_id)
-    $group    = $auth->getClientGroup(); // groupe de tarification → alimente getItemPrice()
-}
+$step2 = $checkoutSrv->checkoutStep2_postPayment();          // enregistre le paiement, fait sortir du -1
 ```
 
 **Hooker la boutique sans sous-classement**
 
 ```php
-// Attacher un listener à n'importe quel événement meliscommerce_service_*_start ou *_end.
 // _start → modifier les entrées ; _end → modifier $params['results'].
 $this->attachEventListener(
     $events, '*', 'meliscommerce_service_get_item_price_end',
@@ -247,14 +346,12 @@ $this->attachEventListener(
 | Élément | Chemin |
 | --- | --- |
 | Config du module (services, contrôleurs, plugins) | `vendor/melisplatform/melis-commerce/config/module.config.php` |
-| Config de l'interface back-office | `vendor/melisplatform/melis-commerce/config/interface/` |
+| Routes / capacités de l'API React | `vendor/melisplatform/melis-commerce/config/react-api.php`, `config/react.capabilities.php` |
+| Brick React (source / build) | `vendor/melisplatform/melis-commerce/ui-react/src/`, `public/ui-react/{brick.js, brick.manifest.json}` |
+| Contrôleurs de l'API React (13) | `vendor/melisplatform/melis-commerce/src/Controller/ReactApi/` |
 | Config des plugins front office | `vendor/melisplatform/melis-commerce/config/plugins/` |
-| Config des modèles d'e-mail | `vendor/melisplatform/melis-commerce/config/app.emails.php` |
-| Services | `vendor/melisplatform/melis-commerce/src/Service/` |
-| Entités (10) | `vendor/melisplatform/melis-commerce/src/Entity/` |
-| Table gateways (59) | `vendor/melisplatform/melis-commerce/src/Model/Tables/` |
-| Contrôleurs (BO + plugins FO) | `vendor/melisplatform/melis-commerce/src/Controller/` |
+| Services / Entités (10) / Table gateways (59) | `vendor/melisplatform/melis-commerce/src/Service/`, `src/Entity/`, `src/Model/Tables/` |
 | Listeners (33) | `vendor/melisplatform/melis-commerce/src/Listener/` |
 | Deltas BDD | `vendor/melisplatform/melis-commerce/install/dbdeploy/` |
 
-Voir aussi : [Référence des modules](/fr/reference/modules) · [melis-core](/fr/reference/modules/melis-core) · [melis-cms](/fr/reference/modules/melis-cms) · [melis-dbdeploy](/fr/reference/modules/melis-dbdeploy).
+Voir aussi : [Référence des modules](/reference/modules) · [melis-react-api](/reference/modules/melis-react-api) · [melis-commerce-order-invoice](/reference/modules/melis-commerce-order-invoice) · [melis-core](/legacy/reference/modules/melis-core) · [melis-cms](/reference/modules/melis-cms).

@@ -2,9 +2,9 @@
 layout: home
 
 hero:
-  name: Melis Platform
+  name: Melis Platform v6
   text: Documentation développeur
-  tagline: Construisez, étendez et exploitez sites & applications sur la plateforme open-source basée sur Laminas.
+  tagline: Construisez, étendez et exploitez sites & applications sur la plateforme open-source basée sur Laminas — désormais avec un back-office React moderne.
   actions:
     - theme: brand
       text: Démarrer →
@@ -58,7 +58,7 @@ features:
   - icon:
       light: /icons/cube-light.svg
       dark: /icons/cube-dark.svg
-    title: 35 modules documentés
+    title: 50 modules documentés
     details: Chaque module de la Community Edition — rôle, services, tools backoffice, helpers front, tables DB et vrais exemples de code.
     link: /fr/reference/modules
     linkText: Référence des modules
@@ -78,9 +78,17 @@ features:
 **backoffice** modulaire pour gérer sites, pages, e-commerce, contenus… et est conçue pour être
 **étendue** avec vos propres modules et tools.
 
-Cette documentation s'adresse aux **développeurs** : de la première installation jusqu'à
-l'architecture, la construction de sites et de tools, l'intégration du commerce, l'IA, et la
+Cette documentation couvre la **v6**, qui conserve le même framework, les mêmes modules et les
+mêmes APIs tout en remplaçant le back-office par une **UI React moderne** sur `/melis-react`. Les
+tools sont reconstruits en « bricks » natifs React, chacun avec une bascule Nouveau/Ancien
+ramenant au tool classique dans une iframe, et un **Assistant IA** flottant global est disponible
+dans toute l'interface.
+
+Elle s'adresse aux **développeurs** : de la première installation jusqu'à l'architecture, la
+construction de sites et de tools, l'intégration du commerce, l'ajout de capacités IA, et la
 référence complète de l'API des modules. Pour le produit, rendez-vous sur
 **[melisplatform.com](https://www.melisplatform.com/)**.
+
+> La documentation v5 reste disponible sous **[/fr/legacy/](/fr/legacy/)**.
 
 > 🇬🇧 This documentation is also available in **[English](/)**.

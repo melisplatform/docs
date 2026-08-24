@@ -1,17 +1,21 @@
 # MelisCommerce
 
-> Full e-commerce framework for MelisPlatform — catalog, customers, cart/checkout/orders, coupons,
-> shipping and SEO. Package `melisplatform/melis-commerce`.
+> Full e-commerce framework for MelisPlatform — catalog, customers, cart/checkout/orders, coupons, shipping and SEO — with a React back-office. Package `melisplatform/melis-commerce`.
 
 ## Purpose
 
 MelisCommerce adds a complete commerce layer to a Melis site: a catalog (products, variants,
 attributes, categories, prices, stock), a B2B customer model (accounts + contacts), the
 cart/checkout/order pipeline, coupons, currencies, shipping, returns, documents and SEO. It ships a
-back-office management suite and a front-office shop built entirely from droppable templating
-plugins. The data layer uses **59 `melis_ecom_*` tables**, **26 services**, **10 rich entities** and
-**33 listeners**; data access uses Eloquent (bundled `illuminate/database`), wrapped by Melis-style
+back-office management suite and a front-office shop built from droppable templating plugins. The
+data layer uses **59 `melis_ecom_*` tables**, **26 services**, **10 rich entities** and **33
+listeners**; data access uses Eloquent (bundled `illuminate/database`), wrapped by Melis-style
 event-driven services.
+
+In Melis v6 the business logic is unchanged; the **display layer** is a **React back-office**
+(`/melis-react`). MelisCommerce ships **one multi-brick bundle** exposing **13 native React tools**,
+each backed by JSON endpoints under `/melis/react-api/…`. Every tool keeps a per-tool **New / Old**
+toggle so you can fall back to the classic legacy screen in an iframe.
 
 ## Enable it
 
@@ -23,9 +27,39 @@ return [
 ];
 ```
 
-Requires `melisplatform/melis-core ^5.2`. Database tables are provisioned automatically by
-MelisDbDeploy (deltas under `install/dbdeploy/`). The module is offered by the Melis installer as
-an optional component.
+Requires `melisplatform/melis-core`. Database tables are provisioned automatically by MelisDbDeploy
+(deltas under `install/dbdeploy/`); the module is offered by the Melis installer as an optional
+component. The React tools appear in the back-office only when MelisCommerce is active (discovery via
+`GET /melis/react-api/react-modules`).
+
+## The React back-office — one bundle, thirteen tools
+
+The bundle (`public/ui-react/brick.js` + `brick.manifest.json`) declares 13 tools that self-register
+in `brick.tsx`. All are native full-React; each renders a shared `ViewModeToggle` + `LegacyFrame`, so
+*Old* mounts the classic tool in an iframe (`/melis/react-tool-page?key=<melisKey>`). The seven
+"entity" tools set `subTabs: true` (opening a record adds a sub-tab); all 13 are `persistent`.
+
+![The MelisCommerce section in the React sidebar — the 13 commerce tools](/screenshots/react/melis-commerce/meliscommerce-menu-tools-selector.png)
+
+| Brick id | Route | Label | melisKey |
+| --- | --- | --- | --- |
+| `commerce-accounts` | `/melis-commerce/clients-list` | Accounts | `meliscommerce_clients_list_page` |
+| `commerce-contacts` | `/melis-commerce/contact-list` | Contacts | `meliscommerce_contact_list_page` |
+| `commerce-catalog` | `/melis-commerce/categories` | Catalogs | `meliscommerce_categories_page` |
+| `commerce-products` | `/melis-commerce/product-list` | Products | `meliscommerce_product_list_container` |
+| `commerce-orders` | `/melis-commerce/order-list` | Orders | `meliscommerce_order_list_page` |
+| `commerce-coupons` | `/melis-commerce/coupon-list` | Coupons | `meliscommerce_coupon_list_page` |
+| `commerce-attributes` | `/melis-commerce/attribute-list` | Attributes | `meliscommerce_attribute_list_page` |
+| `commerce-countries` | `/melis-commerce/country-list` | Countries | `meliscommerce_country_list_container` |
+| `commerce-languages` | `/melis-commerce/language-list` | Commerce languages | `meliscommerce_language_list_container` |
+| `commerce-currencies` | `/melis-commerce/currency-lists` | Currencies | `meliscommerce_currency_conf` |
+| `commerce-order-status` | `/melis-commerce/order-status-lists` | Order status | `meliscommerce_order_status_tool_page` |
+| `commerce-clients-groups` | `/melis-commerce/clients-group-list` | Client's groups | `meliscommerce_clients_group_tool_container` |
+| `commerce-settings` | `/melis-commerce/settings` | Commerce settings | `meliscommerce_settings_page` |
+
+> **Rule of thumb:** build the **catalog** (attributes → catalogs → products/variants), manage
+> **customers** (accounts + contacts), then run the **order** pipeline (orders + checkout wizard +
+> coupons), all backed by the commerce reference lists.
 
 ## Object model
 
@@ -40,15 +74,106 @@ an optional component.
 | **Basket** | Anonymous (keyed by `clientKey`) or persistent (tied to an account); merges on login. |
 | **Order** | Created at status `-1` (temporary) during checkout; moves to `1` (New order) after payment. |
 
+## Accounts & contacts
+
+**Accounts** (`/melis-commerce/clients-list`) manages B2B customers: the list has search,
+status/group filters, a column manager, export and CSV **import**. Opening an account is a sub-tab
+with **Properties**, **Company**, **Contacts** (link/unlink, set default), **Addresses**, **Orders**
+(history) and **Files** tabs.
+
+![The Accounts list — filters, column manager and CSV import](/screenshots/react/melis-commerce/meliscommerce-tools-accounts-list.png)
+
+![Account editor — Properties tab (status, name strategy, group, country, tags)](/screenshots/react/melis-commerce/meliscommerce-tools-accounts-new-tab-properties.png)
+
+![Account editor — Contacts tab (link / unlink / default)](/screenshots/react/melis-commerce/meliscommerce-tools-accounts-new-tab-contacts.png)
+
+**Contacts** (`/melis-commerce/contact-list`) manages individual people. The editor has
+**Information**, **Address** and **Association** tabs (link/unlink a contact to accounts, set the
+default). Contacts are backed by `MelisComContactService`; accounts by `MelisComClientService`.
+
+![Contact editor — Association tab (link / unlink accounts)](/screenshots/react/melis-commerce/meliscommerce-tools-contacts-edit-tab-association.png)
+
+## Catalogs, products & variants
+
+**Catalogs** (`/melis-commerce/categories`) is a drag-to-reorder **tree** of categories; a category
+has **Properties**, **SEO** and **Products** (reorderable) tabs.
+
+![The Catalog category tree (React)](/screenshots/react/melis-commerce/meliscommerce-tools-catalogs-treeview.png)
+
+**Products** (`/melis-commerce/product-list`) lists products with filters, duplicate and export. The
+product editor has **Properties**, **Text** (per-language), **Variants**, **SEO** and **Prices**
+tabs. The **Variants** tab is the richest: each variant has its own Properties, SEO, Prices, Stocks
+and Associations, plus media.
+
+![The Products list (React)](/screenshots/react/melis-commerce/meliscommerce-tools-products-list.png)
+
+![Product editor — Variants tab (per-variant prices, stocks, SEO, associations)](/screenshots/react/melis-commerce/meliscommerce-tools-products-edit-tab-variants.png)
+
+![Product editor — Prices tab](/screenshots/react/melis-commerce/meliscommerce-tools-products-edit-tab-prices.png)
+
+**Attributes** (`/melis-commerce/attribute-list`) manages typed product characteristics: editor tabs
+**Properties** (reference, type, status, visible, searchable), **Labels** (per-language) and
+**Values** (values with typed translations).
+
+![Attribute editor — Values tab (values with typed translations)](/screenshots/react/melis-commerce/meliscommerce-tools-attributes-edit-tab-values.png)
+
+## Orders & the checkout wizard
+
+**Orders** (`/melis-commerce/order-list`) has status filters and export. The per-order editor tabs
+are **Properties**, **Basket** (read-only), **Addresses**, **Payment** (read-only), **Shipping**,
+**Messages** and **Returns** — plus **Invoices** when
+[MelisCommerceOrderInvoice](/reference/modules/melis-commerce-order-invoice) is active.
+
+![The Orders list (React)](/screenshots/react/melis-commerce/meliscommerce-tools-order-list.png)
+
+![Order editor — Properties tab](/screenshots/react/melis-commerce/meliscommerce-tools-order-edit-tab-properties.png)
+
+**New Order** opens a guided **7-step checkout wizard**
+(`contact → account → products → addresses → summary → payment → confirmation`), backed by a
+server-side checkout session (endpoints under `/orders/checkout/*`) that resumes where you left off.
+
+![The New Order checkout wizard — contact / account / products steps](/screenshots/react/melis-commerce/meliscommerce-tools-order-newordertunnel-1.png)
+
+![The checkout wizard — addresses / summary step](/screenshots/react/melis-commerce/meliscommerce-tools-order-newordertunnel-2.png)
+
+## Coupons
+
+**Coupons** (`/melis-commerce/coupon-list`) manages discount codes (% or amount). Editor tabs:
+**Properties**, **Assign account** (clients), **Assign product**, and **Orders** (usage history).
+Backed by `MelisComCouponService`; the built-in discount is itself a listener on
+`meliscommerce_service_get_item_price_end`.
+
+![Coupon editor — Assign account tab](/screenshots/react/melis-commerce/meliscommerce-tools-coupons-edit-tab-assignedclients.png)
+
+## Commerce reference tools
+
+Small "settings-style" tools — single-page lists with add/edit modals or a single form:
+
+| Tool | Route | Manages |
+| --- | --- | --- |
+| Countries | `/melis-commerce/country-list` | Commerce country list (add/edit) |
+| Commerce languages | `/melis-commerce/language-list` | Commerce languages (list + modal) |
+| Currencies | `/melis-commerce/currency-lists` | Currencies (list + modal, **set default**) |
+| Order status | `/melis-commerce/order-status-lists` | Statuses; editor has Properties (colour) + Labels |
+| Client's groups | `/melis-commerce/clients-group-list` | Customer groups (list + modal) |
+| Commerce settings | `/melis-commerce/settings` | Single config page — Properties + Accounts tabs |
+
+![The Order status list (React)](/screenshots/react/melis-commerce/meliscommerce-tools-orderstatus-list.png)
+
+![Commerce settings — Properties tab (stock-alert threshold, account-name strategy)](/screenshots/react/melis-commerce/meliscommerce-tools-settings-tab-properties.png)
+
+Commerce settings hold the global stock-alert threshold and the account-name strategy (`sa_type`).
+
 ## Key services
 
-All services extend `MelisComGeneralService` and are registered in `config/module.config.php`.
-Every public method is wrapped in `meliscommerce_service_*_start` / `*_end` events (see
-[Events & listeners](#events--listeners)).
+All services extend `MelisComGeneralService` and are registered in `config/module.config.php`. Every
+public method is wrapped in `meliscommerce_service_*_start` / `*_end` events (see
+[Events & listeners](#events--listeners)). React controllers only validate input and shape JSON — the
+real work stays in these services.
 
 | Service alias | Role |
 | --- | --- |
-| `MelisComProductService` | `getProductById`, `getProductList` → `MelisProduct` entity |
+| `MelisComProductService` | `getProductById`, `getProductList` → `MelisProduct` |
 | `MelisComVariantService` | `getVariantById`, `getVariantListByProductId`, `getVariantBySKU`, `getMainVariantByProductId` → `MelisVariant` |
 | `MelisComCategoryService` | `getCategoryById`, `getCategoryListById(Recursive)` → `MelisCategory` |
 | `MelisComAttributeService` | `getAttributeById`, `getAttributes` → `MelisAttribute` |
@@ -71,7 +196,7 @@ Every public method is wrapped in `meliscommerce_service_*_start` / `*_end` even
 | `MelisComDocumentService` | `getDocumentById`, `getDocumentsByRelation` → `MelisDocument` |
 | `MelisComDuplicationService` | Duplicate products / variants |
 | `MelisComLinksService` | Front-office commerce link builder |
-| `MelisComCacheService` | Commerce cache (`commerce_big_services`; key prefixes `product-/category-/variant-/document-/attribute-`) |
+| `MelisComCacheService` | Commerce cache (`commerce_big_services`) |
 | `MelisComHead` | SEO head helper (`updateTitleAndDescription`) |
 | `MelisComGeneralService` | Base class; helpers: `getTableColumns`, `getEcomLang`, `getFrontPluginLangId` |
 
@@ -90,18 +215,18 @@ the threshold, the `VARIANTSLOWSTOCK` email is sent to the configured recipients
 
 ## Checkout pipeline
 
-Two phases in `MelisComOrderCheckoutService`:
+Two phases in `MelisComOrderCheckoutService` (the React wizard drives the same server logic):
 
-**Phase 1 — `checkoutStep1_prePayment($clientId)`**
-Validates basket and addresses, computes all costs and shipping, generates the order reference, then
-calls `MelisComOrderService::saveOrder()`. The order is saved with `ord_status = -1` (temporary).
-Fires `meliscommerce_service_checkout_step1_prepayment_start/_end` and
-`…_save_success` (carries the new `orderId`).
+**Phase 1 — `checkoutStep1_prePayment($clientId)`** validates basket and addresses, computes all
+costs and shipping, generates the order reference, then calls `MelisComOrderService::saveOrder()`.
+The order is saved with `ord_status = -1` (temporary). Fires
+`meliscommerce_service_checkout_step1_prepayment_start/_end` and `…_save_success` (carries the new
+`orderId`).
 
-**Phase 2 — `checkoutStep2_postPayment()`**
-Called after the payment gateway returns. `MelisComPostPaymentService::processPostPayment()` records
-the transaction in `melis_ecom_order_payment` and moves the order off status `-1` to a real status
-(e.g. `1` = New order). Fires `meliscommerce_service_checkout_step2_postpayment_start/_end`.
+**Phase 2 — `checkoutStep2_postPayment()`** is called after the gateway returns.
+`MelisComPostPaymentService::processPostPayment()` records the transaction in
+`melis_ecom_order_payment` and moves the order off status `-1` to a real status. Fires
+`meliscommerce_service_checkout_step2_postpayment_start/_end`.
 
 **Order statuses:** `-1` temporary · `1` New order · `2` On hold · `3` Shipped · `4` Delivered ·
 `5` Cancelled · `6` Payment error.
@@ -114,10 +239,8 @@ Every service method emits `meliscommerce_service_*_start` and `*_end` events. T
 - `_start` listener: mutate inputs before the work runs.
 - `_end` listener: mutate `$params['results']` before the caller sees it.
 
-This is the primary extension mechanism — no subclassing needed. The built-in coupon discount is
-itself a listener on `meliscommerce_service_get_item_price_end`.
-
-The 33 bundled listeners fall into four families:
+This is the primary extension mechanism — no subclassing needed. The 33 bundled listeners fall into
+four families:
 
 | Family | Examples |
 | --- | --- |
@@ -126,23 +249,24 @@ The 33 bundled listeners fall into four families:
 | Checkout / pricing / stock | `…CheckoutCouponListener`, `…CouponProductPriceListener`, `…ShipmentCostListener`, `…PostPaymentListener`, `…VariantCheckLowStockListener` |
 | Front-office SEO routing | `…SEOReformatToRoutePageUrlListener`, `…SEODispatchRouterCommerceUrlListener`, `…SEOMetaPageListener` |
 
-## Backoffice
+## React API & capabilities
 
-The full commerce back office lives under the **MelisCommerce** left-menu section.
+All routes are child routes of `melis-react-api` (merged from `config/react-api.php`): **13
+invokable controllers** in `src/Controller/ReactApi/`, **184 routes** under `/melis/react-api/…`.
+The response contract everywhere is `{ success, data, error? }`; every action calls
+`denyUnlessAccess()` first (auth + `MelisCoreRights::canAccess(<melisKey>)`, 401/403). Each entity
+tool exposes roughly `GET /<tool>` (keyset list), `/<tool>/stats`, `/<tool>/options`,
+`POST /<tool>/save`, `DELETE /<tool>/delete/:id`, `GET /<tool>/:id`, plus tool-specific
+sub-resources (e.g. Orders adds the full `/orders/checkout/*` wizard).
 
-| Menu entry | Controller | Manages |
-| --- | --- | --- |
-| Catalogs | `MelisComCategory(List)` | Catalog / category drag-and-drop tree; translations, per-country availability, SEO |
-| Products | `MelisComProduct(List)` | Products → variants, prices, texts, SEO, images |
-| Accounts | `MelisComClient(List)` | B2B accounts (company, group, addresses, contacts, orders, files) |
-| Contacts | `MelisComContact` | People; CSV import/export; linkable to multiple accounts |
-| Orders | `MelisComOrder(List)` + `MelisComOrderCheckout` | Orders + 7-step BO creation tunnel; statuses; returns |
-| Coupons | `MelisComCoupon(List)` | Discount coupons (% or amount; per account / product) |
-| Attributes | `MelisComAttribute(List)` | Attributes + typed, translatable values |
-| Countries / Commerce languages / Currencies / Order status / Client's groups | `MelisComCountry` / `MelisComLanguage` / `MelisComCurrency` / `MelisComOrderStatus` / `MelisComClientsGroup` | Reference data (list + edit modal) |
-| Commerce settings | `MelisComSettings` | Global stock-alert threshold; account-name strategy (`sa_type`) |
+> ⚠ Commerce languages are namespaced `/commerce-languages` (not `/languages`) because the core
+> Languages tool already owns `/languages` under the shared `melis-react-api` parent.
 
-Dashboard widgets: `OrdersNumber`, `OrderMessages`, `SalesRevenue`.
+`config/react.capabilities.php` declares one `melisReactToolCapabilities` entry per tool, keyed under
+its melisKey. These are **declarative default-allow** UI hints — they drive the Users → Rights
+checkbox tree and let React mask tabs/buttons via `useCaps(...)` — but there is **no server-side
+`denyUnlessCan()` yet**; only `denyUnlessAccess()` on the tool's melisKey gates the API. Treat
+capabilities as UI hints, not security.
 
 ## Front office
 
@@ -180,16 +304,9 @@ $prdSrv   = $sm->get('MelisComProductService');
 $varSrv   = $sm->get('MelisComVariantService');
 $priceSrv = $sm->get('MelisComPriceService');
 
-// getProductById($productId, $langId = null, $countryId = null, $groupId = -1, $docType = null, $docSubType = [])
 $product = $prdSrv->getProductById($prdId, $langId, $countryId);  // → MelisProduct
-$texts   = $product->getTexts();       // typed texts (TITLE, …) per language
-$cats    = $product->getCategories();  // categories the product belongs to
-
-// getMainVariantByProductId($productId, $langId = null, $countryId = null, $groupId = 1)
 $variant = $varSrv->getMainVariantByProductId($prdId, $langId, $countryId);  // → MelisVariant
-
-// getItemPrice($itemId, $countryId, $groupId, $type = 'variant', array $data = [])
-$price = $priceSrv->getItemPrice($variant->getId(), $countryId, $groupId, 'variant');
+$price   = $priceSrv->getItemPrice($variant->getId(), $countryId, $groupId, 'variant');
 // $price['price'] (net), $price['price_currency'], $price['price_details']
 ```
 
@@ -199,36 +316,17 @@ $price = $priceSrv->getItemPrice($variant->getId(), $countryId, $groupId, 'varia
 $basketSrv   = $sm->get('MelisComBasketService');
 $checkoutSrv = $sm->get('MelisComOrderCheckoutService');
 
-// addVariantToBasket($variantId, $quantity, $clientId, $clientKey = null)
 $basketSrv->addVariantToBasket($variantId, 1, $clientId);
-
-// Merge an anonymous cart after login
 $basketSrv->transferAnonymousBasketToPersistentBasket($clientKey, $clientId);
 
-// Phase 1 — creates order at status -1 (temporary)
-$step1 = $checkoutSrv->checkoutStep1_prePayment($clientId);
+$step1 = $checkoutSrv->checkoutStep1_prePayment($clientId);  // order at status -1
 // $step1['orderId'] — hand to payment gateway
-
-// Phase 2 — after gateway returns; records payment, moves order off -1
-$step2 = $checkoutSrv->checkoutStep2_postPayment();
-```
-
-**Authenticate a front-office customer**
-
-```php
-$auth = $sm->get('MelisComAuthenticationService');
-$res  = $auth->login($email, $password, $rememberMe);  // login($email, $password, $rememberMe = false)
-if ($res['success']) {
-    $personId = $auth->getPersonId();   // logged-in contact (cper_id)
-    $clientId = $auth->getClientId();   // currently-selected account (cli_id)
-    $group    = $auth->getClientGroup(); // pricing group → feeds getItemPrice()
-}
+$step2 = $checkoutSrv->checkoutStep2_postPayment();          // records payment, moves off -1
 ```
 
 **Hook the shop without subclassing**
 
 ```php
-// Attach a listener to any meliscommerce_service_*_start or *_end event.
 // _start → mutate inputs; _end → mutate $params['results'].
 $this->attachEventListener(
     $events, '*', 'meliscommerce_service_get_item_price_end',
@@ -247,14 +345,12 @@ $this->attachEventListener(
 | Concern | Path |
 | --- | --- |
 | Module config (services, controllers, plugins) | `vendor/melisplatform/melis-commerce/config/module.config.php` |
-| Back-office interface config | `vendor/melisplatform/melis-commerce/config/interface/` |
+| React API routes / capabilities | `vendor/melisplatform/melis-commerce/config/react-api.php`, `config/react.capabilities.php` |
+| React brick (source / build) | `vendor/melisplatform/melis-commerce/ui-react/src/`, `public/ui-react/{brick.js, brick.manifest.json}` |
+| React API controllers (13) | `vendor/melisplatform/melis-commerce/src/Controller/ReactApi/` |
 | Front-office plugin config | `vendor/melisplatform/melis-commerce/config/plugins/` |
-| Email templates config | `vendor/melisplatform/melis-commerce/config/app.emails.php` |
-| Services | `vendor/melisplatform/melis-commerce/src/Service/` |
-| Entities (10) | `vendor/melisplatform/melis-commerce/src/Entity/` |
-| Table gateways (59) | `vendor/melisplatform/melis-commerce/src/Model/Tables/` |
-| Controllers (BO + FO plugins) | `vendor/melisplatform/melis-commerce/src/Controller/` |
+| Services / Entities (10) / Table gateways (59) | `vendor/melisplatform/melis-commerce/src/Service/`, `src/Entity/`, `src/Model/Tables/` |
 | Listeners (33) | `vendor/melisplatform/melis-commerce/src/Listener/` |
 | DB deltas | `vendor/melisplatform/melis-commerce/install/dbdeploy/` |
 
-See also: [Module reference](/reference/modules) · [melis-core](/reference/modules/melis-core) · [melis-cms](/reference/modules/melis-cms) · [melis-dbdeploy](/reference/modules/melis-dbdeploy).
+See also: [Module reference](/reference/modules) · [melis-react-api](/reference/modules/melis-react-api) · [melis-commerce-order-invoice](/reference/modules/melis-commerce-order-invoice) · [melis-core](/legacy/reference/modules/melis-core) · [melis-cms](/reference/modules/melis-cms).
