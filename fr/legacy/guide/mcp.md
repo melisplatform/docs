@@ -5,12 +5,15 @@ Melis intègre le **[Model Context Protocol](https://modelcontextprotocol.io/)**
 base de données, scaffolder des modules — pendant une exécution. Cette page explique le
 fonctionnement et comment ajouter votre propre outil MCP.
 
-::: info Client, pas serveur (aujourd'hui)
-Melis agit comme **client MCP** : il lance des **serveurs** MCP locaux (processus PHP, transport
-stdio) et invoque leurs outils quand un modèle le demande. Exposer les outils de Melis *à des
-clients MCP externes* (mode serveur) **n'est pas** encore implémenté, et le transport est stdio
-uniquement. La fonctionnalité est utilisée en production en interne mais évolue activement — lisez
-le code pour l'état courant.
+::: info Client uniquement, en v5
+Dans cette documentation v5 figée, Melis agit uniquement comme **client MCP** : il lance des
+**serveurs** MCP locaux (processus PHP, transport stdio) et invoque leurs outils quand un modèle le
+demande. Exposer les outils de Melis *à des clients MCP externes* sort du périmètre de cette page,
+et le transport est stdio uniquement.
+
+**Cela a changé après la v5.** Les versions actuelles agissent aussi comme **serveur MCP**, en
+exposant les outils en Streamable HTTP derrière une liste d'autorisation stockée en base. Voir le
+[guide MCP actuel](/fr/guide/mcp) — cette page n'est pas mise à jour pour cela.
 :::
 
 ## Serveurs MCP intégrés

@@ -2,8 +2,9 @@
 
 O Melis integra o **[Model Context Protocol](https://modelcontextprotocol.io/)** para que os
 [agentes](./ai) de IA possam invocar **ferramentas** — ler/escrever ficheiros, executar operações
-de base de dados, gerar a estrutura de módulos — durante uma execução. Esta página explica como
-funciona e como adicionar a sua própria ferramenta MCP.
+de base de dados, gerar a estrutura de módulos — durante uma execução. O Melis é também um
+**servidor** MCP: essas mesmas ferramentas podem ser expostas por HTTP a clientes MCP externos. Esta
+página explica como funciona, como adicionar a sua própria ferramenta MCP e como expô-la.
 
 ::: info Mesmo motor, novo back-office
 O Melis v6 manteve o motor de IA e os seus módulos inalterados; substituiu o back-office por uma
@@ -14,29 +15,47 @@ React (**Melis AI → Admin → MCP Server**, a lista de permissões **AI Tools*
 **MCP Inspector**). Essas são indicadas abaixo.
 :::
 
-::: info Cliente, não servidor (por agora)
-O Melis atua como **cliente MCP**: lança **servidores** MCP locais (processos PHP, transporte
-stdio) e invoca as suas ferramentas quando um modelo as solicita. Expor as próprias ferramentas do
-Melis a clientes MCP *externos* (modo servidor) **ainda não** está implementado, e o transporte é
-apenas stdio. A funcionalidade é usada internamente em produção, mas está em evolução ativa — leia
-o código para conhecer o estado atual.
+::: info Cliente *e* servidor
+O Melis atua como **cliente MCP**: lança **servidores** MCP locais (processos PHP, transporte stdio)
+e invoca as suas ferramentas quando um modelo o pede.
+
+O Melis já pode atuar também como **servidor MCP** — essas mesmas ferramentas são exponíveis por
+**Streamable HTTP** a clientes MCP externos (Claude Desktop, o MCP Inspector, as suas próprias
+integrações). Nada fica acessível enquanto não o expuser explicitamente: veja
+**Expor ferramentas a clientes externos** mais abaixo.
 :::
 
 ## Servidores MCP integrados
 
-De origem, o motor inclui quatro servidores MCP (declarados em
+Por omissão a plataforma inclui **seis** servidores MCP, distribuídos por três módulos (declarados em
 `melis-ai-engine/config/app.interface.php` e nos `mcp.tools.php` dos módulos):
 
-| Servidor | Módulo | Ferramentas (exemplos) |
-| --- | --- | --- |
-| `file_operations` | `melis-ai` | `readFile`, `createFile`, `updateFiles`, `createDirectory`, `deleteFile`… |
-| `database_operations` | `melis-ai` | `getTableStructure`, `createDatabaseTable`, `selectData`, `insertData`, `updateData`… |
-| `tool_creator` | `melis-ai-tool-creator` | `createModule`, `activateModule`, `deactivateModule` |
-| `minitemplate_creator` | `melis-ai-community-extensions` | `readSiteAssets`, `getSitePublicUrl`, `renderMinitemplatePreview`… |
+| Servidor (chave de configuração) | Diretório | Módulo | Ferramentas |
+| --- | --- | --- | --- |
+| `file_operations` | `mcp/filemcp` | `melis-ai` | `createFile`, `createDirectory`, `pathExists`, `readFile`, `updateFiles`, `deleteFile`, `deleteDirectory` |
+| `database_operations` | `mcp/dbmcp` | `melis-ai` | `get_table_structure`, `create_database_table`, `add_db_table_columns`, `update_db_table_columns`, `drop_db_table_columns`, `drop_database_table`, `selectData`, `insertData`, `updateData`, `deleteData`, `bulkInsertData` |
+| `module_documents` | `mcp/documentationmcp` | `melis-ai` | `getDocModuleList`, `getModuleDoc`, `getModuleDocImage` |
+| `navigation_operations` | `mcp/navigationmcp` | `melis-ai` | `listBackOfficeTools`, `openBackOfficeTool`, `listCmsPages`, `resolveHomepage`, `openCmsPage`, `navStep` |
+| `tool_creator` | `mcp/toolcreator` | `melis-ai-tool-creator` | `createModule`, `activateModule`, `deactivateModule`, `generateBundle` |
+| `minitemplate_creator` | `mcp/minitemplatecreator` | `melis-ai-community-extensions` | `readSiteAssets`, `getSitePublicUrl`, `uploadMinitemplateImages`, `renderMinitemplatePreview` |
 
-Cada um é executado como um executável autónomo, por exemplo
-`vendor/melisplatform/melis-ai/mcp/dbmcp/bin/server.php`.
+Cada servidor oferece **dois modos de execução** a partir das mesmas implementações:
 
+- **stdio** — `bin/server.php`, por exemplo
+  `vendor/melisplatform/melis-ai/mcp/dbmcp/bin/server.php`. É o que o motor lança para as execuções
+  de agentes dentro da plataforma, e aquilo a que um cliente desktop local se pode ligar. Não
+  acessível pela rede.
+- **HTTP** — `public/index.php`, servido por `bin/serve.php` (um wrapper de `php -S`). É o modo
+  exponível na rede, e o único que aplica a lista de permissões abaixo.
+
+::: tip Os servidores vivem em vários módulos
+Não estão todos sob `melis-ai`. Para inventariar o que uma instalação tem realmente:
+```bash
+ls -d vendor/melisplatform/melis-ai*/mcp/*/
+```
+`navigationmcp` é um caso especial: não tem `vendor/` próprio e usa emprestado o autoloader do
+`dbmcp`.
+:::
 ## Como flui uma chamada de ferramenta
 
 Quando um modelo (Claude/Gemini) pede para invocar uma função durante a execução de um agente:
@@ -156,6 +175,107 @@ Server** (o subseparador **MCP Exposition**); apenas as ferramentas assinaladas 
 Consulte o [guia de IA](./ai) para o modelo completo de agente/instância e a
 [referência do `melis-ai`](/pt/reference/modules/melis-ai) para as ferramentas e endpoints.
 
+## Expor ferramentas a clientes externos (modo servidor)
+
+Executar um servidor em **modo HTTP** torna as suas ferramentas invocáveis por qualquer cliente MCP
+que lhe consiga chegar, pelo que a exposição é deliberadamente protegida em várias camadas. O guia
+operacional completo (Docker local e depois Kubernetes) vem com o pacote em
+`vendor/melisplatform/melis-ai/mcp/MCP-EXPOSURE-GUIDE.md`; isto é o resumo.
+
+### A lista de ferramentas expostas
+
+O `public/index.php` de cada servidor lê a tabela **`melis_ai_mcp_exposed_tools`** no arranque e
+regista *apenas* as ferramentas aí listadas:
+
+```php
+$names        = $pdo->query('SELECT met_tool_name FROM melis_ai_mcp_exposed_tools')
+                    ->fetchAll(PDO::FETCH_COLUMN);
+$exposedNames = array_flip($names);
+
+foreach ($allTools as $toolName => $callable) {
+    if (isset($exposedNames[$toolName])) {
+        $builder->addTool($callable);
+    }
+}
+```
+
+Uma **tabela vazia — ou uma base de dados inacessível — não expõe nada**. Essa é a salvaguarda
+principal: ferramentas destrutivas como `deleteData` ou `drop_database_table` ficam simplesmente
+fora da tabela. Os valores têm de corresponder às chaves camelCase de `$allTools` no
+`public/index.php` de cada servidor.
+
+Faça a gestão da lista a partir do back-office React em
+**Melis AI → Admin → MCP Server → MCP Exposition** — uma checklist de todas as funções declaradas;
+marcar uma ferramenta insere a sua linha, desmarcar remove-a. É suportado por
+`MelisReactApiAiMcpServerController` (`GET /melis/react-api/ai-mcp-server/data`,
+`POST …/save-tools`) e pelo modelo `MelisAIMcpExposedToolTable`.
+
+::: warning Verifique o ponto de entrada antes de expor
+Um `public/index.php` distribuído não é automaticamente seguro. Alguns servidores trazem uma simples
+cadeia `Server::builder()->addTool(…)->build()` que regista **todas** as ferramentas sem filtragem
+na base de dados. Abra o ficheiro e confirme que o ciclo `$allTools` + PDO acima está presente antes
+de o colocar numa rede.
+:::
+
+### Executar um servidor por HTTP
+
+O `bin/serve.php` arranca o servidor web integrado do PHP sobre `public/`, lendo `MCP_HOST` e
+`MCP_PORT`:
+
+```bash
+MCP_HOST=0.0.0.0 MCP_PORT=6276 php vendor/melisplatform/melis-ai/mcp/dbmcp/bin/serve.php
+```
+
+Numa stack Docker cada servidor corre como um programa **supervisord** de longa duração. A
+distribuição de portas de referência (apenas interna — para fora é tudo 443):
+
+| Port | Servidor |
+| --- | --- |
+| 6274 | UI MCP Inspector |
+| 6275 | `filemcp` |
+| 6276 | `dbmcp` |
+| 6277 | Proxy MCP Inspector |
+| 6278 | `documentationmcp` |
+| 6279 | `navigationmcp` |
+| 6280 | `toolcreator` |
+| 6281 | `minitemplatecreator` |
+
+O ponto de entrada HTTP precisa de `nyholm/psr7`, `nyholm/psr7-server` e
+`laminas/laminas-httphandlerrunner`. Os servidores sob `melis-ai/mcp/*` já os incluem; os de outros
+módulos normalmente têm de os adicionar.
+
+### Verificar
+
+Todos os servidores respondem `ok` a `GET /healthz`, mas **o healthz por si só não prova nada**:
+responde antes do bootstrap PSR-7, por isso um servidor com o autoloader do Composer desatualizado
+passa no healthz e falha no primeiro pedido real. Envie sempre também um handshake a sério:
+
+```bash
+curl -s -X POST http://127.0.0.1:6276/ \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}}}'
+```
+
+Um `"result"` JSON-RPC na resposta significa que o servidor está mesmo a funcionar.
+
+### Publicar remotamente
+
+No Kubernetes os servidores ficam atrás do ingress nginx com TLS na 443 e uma lista branca de IP
+(`whitelist-source-range`), pelo que as portas `627x` nunca são acessíveis diretamente. Há duas
+estratégias de encaminhamento: um hostname por servidor (`https://dbmcp.<dominio>/`) ou —
+recomendada quando expõe vários — um único host com encaminhamento por caminho
+(`https://mcp.<dominio>/dbmcp`), onde `use-regex` + `rewrite-target` retiram o prefixo para que cada
+backend continue a ver `/` e `/healthz`. Mudar de uma para a outra mais tarde altera apenas o
+ingress.
+
+::: danger O `composer update` apaga as alterações em vendor
+Estes pontos de entrada vivem sob `vendor/`. Um `composer update melisplatform/melis-ai` (ou os
+outros módulos com MCP) volta a extrair o pacote e pode reverter um `public/index.php` com filtragem
+na base de dados para expor tudo. Verifique de novo após cada atualização e leve as alterações
+duradouras para montante, para os repositórios dos pacotes, em vez de `vendor/`.
+:::
+
 ## Inspecionar servidores MCP (MCP Inspector)
 
 O back-office React inclui uma ferramenta **MCP Inspector** em **Melis AI → MCP Inspector** (rota
@@ -178,6 +298,12 @@ ativar ferramentas de escrita. Para além da sandbox, o alcance de um agente é 
 de permissões **AI Tools** e pelos **DB Rights** (acima), pelo que um modelo só pode tocar naquilo
 que concedeu explicitamente.
 
+Em **modo servidor** as camadas somam-se: uma ferramenta tem de estar em
+`melis_ai_mcp_exposed_tools` para sequer ser registada, o ingress restringe quem chama por IP de
+origem sobre TLS, e a sandbox de ficheiros/base de dados continua a aplicar-se ao que for executado.
+Exponha o conjunto útil mais pequeno — primeiro as ferramentas só de leitura — e mantenha as
+destrutivas fora da lista.
+
 ## Ficheiros principais
 
 | Aspeto | Caminho |
@@ -186,6 +312,11 @@ que concedeu explicitamente.
 | Trait de gestão de ferramentas | `vendor/melisplatform/melis-ai-engine/src/Service/Traits/Mcp/McpToolManagementTrait.php` |
 | Configuração do servidor | `vendor/melisplatform/melis-ai-engine/config/app.interface.php` |
 | Exemplo de `mcp.tools.php` | `vendor/melisplatform/melis-ai-tool-creator/config/mcp.tools.php` |
-| Exemplo de servidor | `vendor/melisplatform/melis-ai/mcp/dbmcp/bin/server.php` |
+| Exemplo de servidor (stdio) | `vendor/melisplatform/melis-ai/mcp/dbmcp/bin/server.php` |
+| Exemplo de servidor (HTTP) | `vendor/melisplatform/melis-ai/mcp/dbmcp/public/index.php` |
+| Lançador HTTP | `vendor/melisplatform/melis-ai/mcp/dbmcp/bin/serve.php` |
+| Guia de exposição | `vendor/melisplatform/melis-ai/mcp/MCP-EXPOSURE-GUIDE.md` |
+| Modelo das ferramentas expostas | `vendor/melisplatform/melis-ai/src/Model/Tables/MelisAIMcpExposedToolTable.php` |
+| Separador MCP Server (API React) | `vendor/melisplatform/melis-ai/src/Controller/React/MelisReactApiAiMcpServerController.php` |
 | Inspector (clássico) | `vendor/melisplatform/melis-ai/src/Controller/McpInspectorController.php` |
 | Inspector (API React) | `vendor/melisplatform/melis-ai/src/Controller/React/MelisReactApiMcpInspectorController.php` |

@@ -4,12 +4,15 @@ Melis integrates the **[Model Context Protocol](https://modelcontextprotocol.io/
 [agents](./ai) can call **tools** — read/write files, run database operations, scaffold modules —
 during a run. This page explains how it works and how to add your own MCP tool.
 
-::: info Client, not server (today)
-Melis acts as an **MCP client**: it launches local MCP **servers** (PHP processes, stdio
-transport) and invokes their tools when a model requests them. Exposing Melis's own tools *to
-external* MCP clients (server mode) is **not** implemented yet, and the transport is stdio only.
-The feature is production-used internally but actively evolving — read the code for the current
-state.
+::: info Client only, in v5
+In this frozen v5 documentation, Melis acts purely as an **MCP client**: it launches local MCP
+**servers** (PHP processes, stdio transport) and invokes their tools when a model requests them.
+Exposing Melis's own tools *to external* MCP clients is out of scope here, and the transport is
+stdio only.
+
+**This changed after v5.** Current versions also act as an **MCP server**, exposing tools over
+Streamable HTTP behind a database-backed allow-list. See the
+[current MCP guide](/guide/mcp) — this page is not updated for it.
 :::
 
 ## Built-in MCP servers

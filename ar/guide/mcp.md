@@ -2,7 +2,8 @@
 
 يدمج Melis **[بروتوكول سياق النموذج (Model Context Protocol)](https://modelcontextprotocol.io/)** بحيث يستطيع
 [الوكلاء](./ai) الذكاء الاصطناعي استدعاء **أدوات** — قراءة/كتابة الملفات، تنفيذ عمليات قواعد البيانات، توليد هياكل الوحدات —
-أثناء التشغيل. تشرح هذه الصفحة كيفية عمل ذلك وكيفية إضافة أداة MCP خاصة بك.
+أثناء التشغيل. كما أن Melis هو **خادم** MCP أيضًا: يمكن كشف الأدوات نفسها عبر HTTP لعملاء MCP خارجيين.
+تشرح هذه الصفحة كيفية عمل ذلك، وكيفية إضافة أداة MCP خاصة بك، وكيفية كشفها.
 
 ::: info المحرك نفسه، مكتب خلفي جديد
 حافظ Melis v6 على محرك الذكاء الاصطناعي ووحداته دون تغيير؛ واستبدل المكتب الخلفي بـ **واجهة React
@@ -12,28 +13,44 @@
 الخاصة بالوكيل، و**MCP Inspector**). وهذه مذكورة أدناه.
 :::
 
-::: info عميل، وليس خادمًا (حاليًا)
+::: info عميل *وخادم*
 يعمل Melis كـ **عميل MCP**: فهو يُطلق **خوادم** MCP محلية (عمليات PHP، نقل عبر stdio)
-ويستدعي أدواتها عندما يطلبها النموذج. أما كشف أدوات Melis الخاصة *للعملاء الخارجيين* لـ
-MCP (وضع الخادم) فهو **غير** مُنفّذ بعد، والنقل عبر stdio فقط.
-الميزة مستخدمة في الإنتاج داخليًا لكنها في تطور نشط — راجع الشيفرة للاطلاع على الحالة الحالية.
+ويستدعي أدواتها عندما يطلبها النموذج.
+
+وأصبح Melis قادرًا الآن على العمل كـ **خادم MCP** أيضًا — إذ يمكن كشف الأدوات نفسها عبر
+**Streamable HTTP** لعملاء MCP خارجيين (Claude Desktop، وMCP Inspector، وتكاملاتك الخاصة).
+لا شيء يكون قابلًا للوصول قبل أن تكشفه صراحةً: راجع **كشف الأدوات للعملاء الخارجيين** أدناه.
 :::
 
 ## خوادم MCP المُضمّنة
 
-يأتي المحرك جاهزًا بأربعة خوادم MCP (مُعلَنة في
+تشحن المنصة افتراضيًا **ستة** خوادم MCP موزَّعة على ثلاث وحدات (مُعلَنة في
 `melis-ai-engine/config/app.interface.php` وفي ملفات `mcp.tools.php` الخاصة بالوحدات):
 
-| الخادم | الوحدة | الأدوات (أمثلة) |
-| --- | --- | --- |
-| `file_operations` | `melis-ai` | `readFile`، `createFile`، `updateFiles`، `createDirectory`، `deleteFile`… |
-| `database_operations` | `melis-ai` | `getTableStructure`، `createDatabaseTable`، `selectData`، `insertData`، `updateData`… |
-| `tool_creator` | `melis-ai-tool-creator` | `createModule`، `activateModule`، `deactivateModule` |
-| `minitemplate_creator` | `melis-ai-community-extensions` | `readSiteAssets`، `getSitePublicUrl`، `renderMinitemplatePreview`… |
+| الخادم (مفتاح الإعداد) | المجلد | الوحدة | الأدوات |
+| --- | --- | --- | --- |
+| `file_operations` | `mcp/filemcp` | `melis-ai` | `createFile`, `createDirectory`, `pathExists`, `readFile`, `updateFiles`, `deleteFile`, `deleteDirectory` |
+| `database_operations` | `mcp/dbmcp` | `melis-ai` | `get_table_structure`, `create_database_table`, `add_db_table_columns`, `update_db_table_columns`, `drop_db_table_columns`, `drop_database_table`, `selectData`, `insertData`, `updateData`, `deleteData`, `bulkInsertData` |
+| `module_documents` | `mcp/documentationmcp` | `melis-ai` | `getDocModuleList`, `getModuleDoc`, `getModuleDocImage` |
+| `navigation_operations` | `mcp/navigationmcp` | `melis-ai` | `listBackOfficeTools`, `openBackOfficeTool`, `listCmsPages`, `resolveHomepage`, `openCmsPage`, `navStep` |
+| `tool_creator` | `mcp/toolcreator` | `melis-ai-tool-creator` | `createModule`, `activateModule`, `deactivateModule`, `generateBundle` |
+| `minitemplate_creator` | `mcp/minitemplatecreator` | `melis-ai-community-extensions` | `readSiteAssets`, `getSitePublicUrl`, `uploadMinitemplateImages`, `renderMinitemplatePreview` |
 
-يعمل كل خادم كملف تنفيذي مستقل، على سبيل المثال
-`vendor/melisplatform/melis-ai/mcp/dbmcp/bin/server.php`.
+يوفّر كل خادم **وضعَي تشغيل** انطلاقًا من تنفيذ الأدوات نفسه:
 
+- **stdio** — `bin/server.php`، مثل `vendor/melisplatform/melis-ai/mcp/dbmcp/bin/server.php`.
+  هذا ما يُطلقه المحرك أثناء تشغيل الوكلاء داخل المنصة، وما يمكن لعميل سطح مكتب محلي الاتصال به.
+  غير قابل للوصول عبر الشبكة.
+- **HTTP** — `public/index.php`، يُقدَّم عبر `bin/serve.php` (غلاف حول `php -S`).
+  هذا هو الوضع القابل للكشف على الشبكة، وهو الوحيد الذي يطبّق قائمة السماح أدناه.
+
+::: tip الخوادم موزَّعة على عدة وحدات
+ليست كلها ضمن `melis-ai`. لحصر ما تحتويه نسخة تثبيت معيّنة فعليًا:
+```bash
+ls -d vendor/melisplatform/melis-ai*/mcp/*/
+```
+`navigationmcp` حالة خاصة — إذ ليس له مجلد `vendor/` خاص به، بل يستعير مُحمِّل `dbmcp`.
+:::
 ## كيف يسير استدعاء الأداة
 
 عندما يطلب نموذج (Claude/Gemini) استدعاء دالة أثناء تشغيل وكيل:
@@ -151,6 +168,100 @@ Server** (التبويب الفرعي **MCP Exposition**)؛ ولا تُتاح س
 [دليل الذكاء الاصطناعي](./ai) للاطلاع على نموذج الوكيل/النسخة الكامل و
 [مرجع `melis-ai`](/ar/reference/modules/melis-ai) للأدوات والنقاط الطرفية.
 
+## كشف الأدوات للعملاء الخارجيين (وضع الخادم)
+
+تشغيل خادم في **وضع HTTP** يجعل أدواته قابلة للاستدعاء من أي عميل MCP يستطيع الوصول إليه،
+لذلك جرى تقييد الكشف عمدًا على عدة طبقات. يأتي الدليل التشغيلي الكامل (Docker محليًا ثم Kubernetes)
+مرفقًا مع الحزمة في `vendor/melisplatform/melis-ai/mcp/MCP-EXPOSURE-GUIDE.md`؛ وما يلي ملخّصه.
+
+### قائمة الأدوات المكشوفة
+
+يقرأ ملف `public/index.php` في كل خادم جدول **`melis_ai_mcp_exposed_tools`** عند الإقلاع،
+ولا يسجّل *سوى* الأدوات المدرجة فيه:
+
+```php
+$names        = $pdo->query('SELECT met_tool_name FROM melis_ai_mcp_exposed_tools')
+                    ->fetchAll(PDO::FETCH_COLUMN);
+$exposedNames = array_flip($names);
+
+foreach ($allTools as $toolName => $callable) {
+    if (isset($exposedNames[$toolName])) {
+        $builder->addTool($callable);
+    }
+}
+```
+
+**الجدول الفارغ — أو قاعدة بيانات غير قابلة للوصول — لا يكشف شيئًا**. وهذا هو الضمان الأساسي:
+الأدوات المُدمِّرة مثل `deleteData` أو `drop_database_table` تبقى ببساطة خارج الجدول.
+ويجب أن تطابق القيم مفاتيح camelCase في `$allTools` داخل `public/index.php` لكل خادم.
+
+أدِر القائمة من مكتب React الخلفي عبر **Melis AI ← Admin ← MCP Server ← MCP Exposition** —
+وهي قائمة مراجعة بكل الدوال المُعلَنة؛ تحديد أداة يُدرِج سطرها، وإلغاء التحديد يحذفه.
+ويستند ذلك إلى `MelisReactApiAiMcpServerController` (`GET /melis/react-api/ai-mcp-server/data`،
+و`POST …/save-tools`) وإلى النموذج `MelisAIMcpExposedToolTable`.
+
+::: warning تحقّق من نقطة الدخول قبل الكشف
+وجود `public/index.php` ضمن الحزمة لا يعني أنه آمن تلقائيًا. فبعض الخوادم تشحن سلسلة
+`Server::builder()->addTool(…)->build()` بسيطة تسجّل **كل** الأدوات دون أي ترشيح من قاعدة البيانات.
+افتح الملف وتأكّد من وجود حلقة `$allTools` مع PDO المذكورة أعلاه قبل وضعه على الشبكة.
+:::
+
+### تشغيل خادم عبر HTTP
+
+يُشغِّل `bin/serve.php` خادم الويب المدمج في PHP على `public/`، قارئًا `MCP_HOST` و`MCP_PORT`:
+
+```bash
+MCP_HOST=0.0.0.0 MCP_PORT=6276 php vendor/melisplatform/melis-ai/mcp/dbmcp/bin/serve.php
+```
+
+في بيئة Docker يعمل كل خادم كبرنامج **supervisord** طويل الأمد.
+توزيع المنافذ المرجعي (داخلي فقط — أما خارجيًا فكل شيء على 443):
+
+| Port | الخادم |
+| --- | --- |
+| 6274 | UI MCP Inspector |
+| 6275 | `filemcp` |
+| 6276 | `dbmcp` |
+| 6277 | Proxy MCP Inspector |
+| 6278 | `documentationmcp` |
+| 6279 | `navigationmcp` |
+| 6280 | `toolcreator` |
+| 6281 | `minitemplatecreator` |
+
+تحتاج نقطة دخول HTTP إلى `nyholm/psr7` و`nyholm/psr7-server` و`laminas/laminas-httphandlerrunner`.
+الخوادم ضمن `melis-ai/mcp/*` تشحنها بالفعل؛ أما خوادم الوحدات الأخرى فتحتاج عادةً إلى إضافتها.
+
+### التحقّق
+
+يستجيب كل خادم لـ `GET /healthz` بـ `ok`، لكن **healthz وحده لا يثبت شيئًا** — فهو يعود قبل
+إقلاع PSR-7، ما يعني أن خادمًا بمُحمِّل Composer قديم سيجتاز healthz ثم ينهار عند أول طلب حقيقي.
+أرسِل دائمًا مصافحة حقيقية أيضًا:
+
+```bash
+curl -s -X POST http://127.0.0.1:6276/ \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}}}'
+```
+
+وجود `"result"` بصيغة JSON-RPC في الاستجابة يعني أن الخادم يعمل فعلًا.
+
+### النشر عن بُعد
+
+في Kubernetes تقع الخوادم خلف nginx ingress مع TLS على المنفذ 443 وقائمة سماح لعناوين IP
+(`whitelist-source-range`)، بحيث لا تكون منافذ `627x` قابلة للوصول مباشرةً أبدًا.
+وهناك استراتيجيتان للتوجيه: اسم مضيف لكل خادم (`https://dbmcp.<domain>/`)، أو — وهو المُوصى به عند
+كشف عدة خوادم — مضيف واحد مع توجيه بالمسار (`https://mcp.<domain>/dbmcp`)، حيث يزيل
+`use-regex` مع `rewrite-target` البادئة ليظل كل خادم خلفي يرى `/` و`/healthz`.
+والتحويل بينهما لاحقًا يقتصر على ingress وحده.
+
+::: danger `composer update` يمحو التعديلات داخل vendor
+تقع نقاط الدخول هذه ضمن `vendor/`. وتشغيل `composer update melisplatform/melis-ai`
+(أو الوحدات الأخرى الحاملة لـ MCP) يعيد استخراج الحزمة وقد يُرجع ملف `public/index.php` المُرشَّح
+من قاعدة البيانات إلى كشف كل شيء. أعِد التحقّق بعد كل تحديث، واعتمد التغييرات الدائمة في مستودعات
+الحزم الأصلية بدلًا من `vendor/`.
+:::
+
 ## فحص خوادم MCP (MCP Inspector)
 
 يأتي المكتب الخلفي React بأداة **MCP Inspector** ضمن **Melis AI ← MCP Inspector** (المسار
@@ -172,6 +283,11 @@ MCP Inspector الرسمية على خادم مُختار عبر
 يكون نطاق الوكيل محدودًا بقائمة السماح **AI Tools** و**DB Rights** (أعلاه)، بحيث لا يستطيع
 النموذج المساس إلا بما منحته له صراحةً.
 
+وفي **وضع الخادم** تتراكم الطبقات: يجب أن تكون الأداة موجودة في `melis_ai_mcp_exposed_tools`
+كي تُسجَّل أصلًا، ويقيّد ingress المتصلين بحسب عنوان IP المصدر فوق TLS، وتظل بيئة عزل
+الملفات/قاعدة البيانات سارية على كل ما يُنفَّذ. اكشف أصغر مجموعة مفيدة — الأدوات للقراءة فقط أولًا —
+وأبقِ الأدوات المُدمِّرة خارج القائمة.
+
 ## الملفات الرئيسية
 
 | الغرض | المسار |
@@ -180,6 +296,11 @@ MCP Inspector الرسمية على خادم مُختار عبر
 | سِمة إدارة الأدوات | `vendor/melisplatform/melis-ai-engine/src/Service/Traits/Mcp/McpToolManagementTrait.php` |
 | إعداد الخادم | `vendor/melisplatform/melis-ai-engine/config/app.interface.php` |
 | مثال `mcp.tools.php` | `vendor/melisplatform/melis-ai-tool-creator/config/mcp.tools.php` |
-| مثال خادم | `vendor/melisplatform/melis-ai/mcp/dbmcp/bin/server.php` |
+| مثال خادم (stdio) | `vendor/melisplatform/melis-ai/mcp/dbmcp/bin/server.php` |
+| مثال خادم (HTTP) | `vendor/melisplatform/melis-ai/mcp/dbmcp/public/index.php` |
+| مُطلِق HTTP | `vendor/melisplatform/melis-ai/mcp/dbmcp/bin/serve.php` |
+| دليل الكشف | `vendor/melisplatform/melis-ai/mcp/MCP-EXPOSURE-GUIDE.md` |
+| نموذج الأدوات المكشوفة | `vendor/melisplatform/melis-ai/src/Model/Tables/MelisAIMcpExposedToolTable.php` |
+| تبويب MCP Server (واجهة React) | `vendor/melisplatform/melis-ai/src/Controller/React/MelisReactApiAiMcpServerController.php` |
 | Inspector (الكلاسيكي) | `vendor/melisplatform/melis-ai/src/Controller/McpInspectorController.php` |
 | Inspector (واجهة React) | `vendor/melisplatform/melis-ai/src/Controller/React/MelisReactApiMcpInspectorController.php` |
