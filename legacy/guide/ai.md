@@ -51,12 +51,12 @@ Under **Melis AI → Agents** you build an agent's **scenario** (its steps), tes
 
 ## Use an agent from your code
 
-The simplest integration is the **`MelisAIChat` view helper**
+The simplest integration is the **`AIChatViewHelper` view helper**
 (`melis-ai-engine/src/View/Helper/MelisAIChatViewHelper.php`). Drop it into a `.phtml` view to
 render a ready-to-use chat bound to an instance:
 
 ```php
-<?= $this->MelisAIChat(
+<?= $this->AIChatViewHelper(
     $maiInstanceId,        // instance id from melis_ai_instances.mai_instance_id
     $agentId = null,       // optional explicit agent id
     $extraEntryParams = [],// custom_text / custom_files / custom_data

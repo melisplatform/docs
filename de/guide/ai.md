@@ -125,12 +125,12 @@ eingebunden, sodass eine offene Session das Wechseln von Werkzeugen übersteht.
 
 ## Einen Agenten aus Ihrem Code verwenden
 
-Die einfachste serverseitige Integration ist nach wie vor der **View-Helper `MelisAIChat`**
+Die einfachste serverseitige Integration ist nach wie vor der **View-Helper `AIChatViewHelper`**
 (`melis-ai-engine/src/View/Helper/MelisAIChatViewHelper.php`). Fügen Sie ihn in eine
 `.phtml`-View ein, um einen einsatzbereiten, an eine Instanz gebundenen Chat zu rendern:
 
 ```php
-<?= $this->MelisAIChat(
+<?= $this->AIChatViewHelper(
     $maiInstanceId,        // instance id from melis_ai_instances.mai_instance_id
     $agentId = null,       // optional explicit agent id
     $extraEntryParams = [],// custom_text / custom_files / custom_data

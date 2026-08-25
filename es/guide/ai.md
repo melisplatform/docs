@@ -119,12 +119,12 @@ por lo que una sesión abierta sobrevive al cambio de herramienta.
 
 ## Usar un agente desde su código
 
-La integración del lado del servidor más sencilla sigue siendo el **view helper `MelisAIChat`**
+La integración del lado del servidor más sencilla sigue siendo el **view helper `AIChatViewHelper`**
 (`melis-ai-engine/src/View/Helper/MelisAIChatViewHelper.php`). Colóquelo en una vista `.phtml` para
 renderizar un chat listo para usar vinculado a una instancia:
 
 ```php
-<?= $this->MelisAIChat(
+<?= $this->AIChatViewHelper(
     $maiInstanceId,        // instance id from melis_ai_instances.mai_instance_id
     $agentId = null,       // optional explicit agent id
     $extraEntryParams = [],// custom_text / custom_files / custom_data

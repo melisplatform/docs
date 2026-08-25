@@ -112,12 +112,12 @@ React، أمّا *Old* فيفتح الأداة الكلاسيكية داخل إ�
 
 ## استخدام وكيل من داخل شيفرتك
 
-أبسط تكامل على جانب الخادم يبقى **مساعد العرض `MelisAIChat`**
+أبسط تكامل على جانب الخادم يبقى **مساعد العرض `AIChatViewHelper`**
 (`melis-ai-engine/src/View/Helper/MelisAIChatViewHelper.php`). ضعه داخل عرض `.phtml`
 لعرض محادثة جاهزة للاستخدام مرتبطة بنسخة:
 
 ```php
-<?= $this->MelisAIChat(
+<?= $this->AIChatViewHelper(
     $maiInstanceId,        // instance id from melis_ai_instances.mai_instance_id
     $agentId = null,       // optional explicit agent id
     $extraEntryParams = [],// custom_text / custom_files / custom_data

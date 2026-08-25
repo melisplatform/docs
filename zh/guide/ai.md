@@ -111,12 +111,12 @@ AI 逻辑仍然运行在服务端——React 只负责展示和 API 调用。
 
 ## 从你的代码中使用智能体
 
-最简单的服务端集成方式仍然是 **`MelisAIChat` 视图辅助器**
+最简单的服务端集成方式仍然是 **`AIChatViewHelper` 视图辅助器**
 （`melis-ai-engine/src/View/Helper/MelisAIChatViewHelper.php`）。将它放入 `.phtml` 视图中，即可
 渲染一个绑定到某实例、可直接使用的聊天界面：
 
 ```php
-<?= $this->MelisAIChat(
+<?= $this->AIChatViewHelper(
     $maiInstanceId,        // instance id from melis_ai_instances.mai_instance_id
     $agentId = null,       // optional explicit agent id
     $extraEntryParams = [],// custom_text / custom_files / custom_data

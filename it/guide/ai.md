@@ -113,12 +113,12 @@ conversazione. Resta montato durante le navigazioni, così una sessione aperta s
 
 ## Usare un agente dal tuo codice
 
-L'integrazione lato server più semplice resta il **view helper `MelisAIChat`**
+L'integrazione lato server più semplice resta il **view helper `AIChatViewHelper`**
 (`melis-ai-engine/src/View/Helper/MelisAIChatViewHelper.php`). Inseriscilo in una vista `.phtml` per
 renderizzare una chat pronta all'uso associata a un'istanza:
 
 ```php
-<?= $this->MelisAIChat(
+<?= $this->AIChatViewHelper(
     $maiInstanceId,        // instance id from melis_ai_instances.mai_instance_id
     $agentId = null,       // optional explicit agent id
     $extraEntryParams = [],// custom_text / custom_files / custom_data

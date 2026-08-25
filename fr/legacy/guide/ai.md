@@ -51,12 +51,12 @@ avec *Run Scenario*, et vous lui assignez des outils.
 
 ## Utiliser un agent depuis votre code
 
-L'intégration la plus simple est le **view helper `MelisAIChat`**
+L'intégration la plus simple est le **view helper `AIChatViewHelper`**
 (`melis-ai-engine/src/View/Helper/MelisAIChatViewHelper.php`). Déposez-le dans une vue `.phtml` pour
 rendre un chat prêt à l'emploi lié à une instance :
 
 ```php
-<?= $this->MelisAIChat(
+<?= $this->AIChatViewHelper(
     $maiInstanceId,        // id d'instance depuis melis_ai_instances.mai_instance_id
     $agentId = null,       // id d'agent explicite (optionnel)
     $extraEntryParams = [],// custom_text / custom_files / custom_data

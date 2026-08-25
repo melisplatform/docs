@@ -113,12 +113,12 @@ the conversation. It stays mounted across navigations, so an open session surviv
 
 ## Use an agent from your code
 
-The simplest server-side integration is still the **`MelisAIChat` view helper**
+The simplest server-side integration is still the **`AIChatViewHelper` view helper**
 (`melis-ai-engine/src/View/Helper/MelisAIChatViewHelper.php`). Drop it into a `.phtml` view to
 render a ready-to-use chat bound to an instance:
 
 ```php
-<?= $this->MelisAIChat(
+<?= $this->AIChatViewHelper(
     $maiInstanceId,        // instance id from melis_ai_instances.mai_instance_id
     $agentId = null,       // optional explicit agent id
     $extraEntryParams = [],// custom_text / custom_files / custom_data

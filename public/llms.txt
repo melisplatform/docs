@@ -23,7 +23,7 @@
 - [Commerce](/guide/commerce) — catalog, cart, orders, customers, front-office plugins.
 - [Create your first tool](/guide/create-a-tool) — module anatomy, config files, controller/service/view, rights.
 - [Templating & dashboard plugins](/guide/plugins) — MelisTemplatingPlugin, MelisCoreDashboardTemplatingPlugin.
-- [AI: agents & engine](/guide/ai) — MelisAI, MelisAIEngine, providers (Claude, Gemini), MelisAIChat view helper.
+- [AI: agents & engine](/guide/ai) — MelisAI, MelisAIEngine, providers (Claude, Gemini), AIChatViewHelper view helper.
 - [MCP](/guide/mcp) — MCP client integration, built-in servers (file, database, tool_creator), adding custom MCP tools, security.
 - [Troubleshooting](/guide/troubleshooting) — dev mode, cache clearing, common pitfalls (modules, rights, assets, translations).
 - [Module reference](/reference/modules) — all 35 CE modules grouped by area.
