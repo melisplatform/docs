@@ -1,4 +1,7 @@
 import { defineConfig } from 'vitepress'
+import { readdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 // Per-module reference pages (one .md per module, EN + /fr). Grouped by area
 // into collapsible sidebar sections, generated for both locales below.
@@ -204,6 +207,67 @@ function versionNav(localePrefix: string, current: string, legacy: string) {
 
 const SITE_BASE = process.env.VITEPRESS_BASE ?? '/'
 
+// Absolute origin of the published site, used to build canonical URLs for the
+// sitemap, Open Graph and Twitter Card tags. Overridable per deploy; the default
+// matches the canonical GitHub Pages deploy served under `base` (/docs/).
+const SITE_ORIGIN = (process.env.VITEPRESS_ORIGIN ?? 'https://melisplatform.github.io').replace(/\/$/, '')
+const CANONICAL_BASE = SITE_ORIGIN + SITE_BASE // e.g. https://melisplatform.github.io/docs/
+const SOCIAL_IMAGE = CANONICAL_BASE + 'og-image.png'
+
+// Open Graph locale per path prefix (root tree is English).
+const OG_LOCALES: Record<string, string> = {
+  fr: 'fr_FR', de: 'de_DE', es: 'es_ES', it: 'it_IT', pt: 'pt_PT', zh: 'zh_CN', ar: 'ar_AR',
+}
+
+// relativePath ('guide/getting-started.md', 'index.md', 'fr/guide/x.md') → absolute
+// canonical URL, honouring cleanUrls (no .html, index → directory).
+function canonicalUrl(relativePath: string): string {
+  const path = relativePath.replace(/\.md$/, '').replace(/(^|\/)index$/, '$1')
+  return CANONICAL_BASE + path
+}
+
+// hreflang alternates are emitted in each page <head> (not the sitemap, which
+// must stay valid against the strict 0.9 XSD). English is the root (no prefix).
+const LOCALE_PREFIXES = ['fr', 'de', 'es', 'it', 'pt', 'zh', 'ar']
+const HREFLANG: Record<string, string> = {
+  '': 'en', fr: 'fr-FR', de: 'de-DE', es: 'es-ES', it: 'it-IT', pt: 'pt-PT', zh: 'zh-CN', ar: 'ar',
+}
+
+// Every markdown route (relative path with .md), scanned once, so alternates are
+// only emitted for locales where the page actually exists (e.g. legacy is EN+FR).
+const DOCS_ROOT = fileURLToPath(new URL('..', import.meta.url))
+const IGNORE_DIRS = new Set(['node_modules', '.vitepress', 'public', '.git', '.github', '.vscode'])
+function collectRoutes(dir: string, base = ''): string[] {
+  const out: string[] = []
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const rel = base ? `${base}/${entry.name}` : entry.name
+    if (entry.isDirectory()) {
+      if (!IGNORE_DIRS.has(entry.name)) out.push(...collectRoutes(join(dir, entry.name), rel))
+    } else if (entry.name.endsWith('.md') && entry.name !== 'README.md') {
+      out.push(rel)
+    }
+  }
+  return out
+}
+const ALL_ROUTES = new Set(collectRoutes(DOCS_ROOT))
+
+// <link rel="alternate" hreflang> tags for a page, across the locales that have it.
+function alternateLinks(relativePath: string): [string, Record<string, string>][] {
+  const first = relativePath.split('/')[0]
+  const inner = LOCALE_PREFIXES.includes(first) ? relativePath.slice(first.length + 1) : relativePath
+  const links: [string, Record<string, string>][] = []
+  for (const loc of ['', ...LOCALE_PREFIXES]) {
+    const candidate = loc ? `${loc}/${inner}` : inner
+    if (ALL_ROUTES.has(candidate)) {
+      links.push(['link', { rel: 'alternate', hreflang: HREFLANG[loc], href: canonicalUrl(candidate) }])
+    }
+  }
+  if (ALL_ROUTES.has(inner)) {
+    links.push(['link', { rel: 'alternate', hreflang: 'x-default', href: canonicalUrl(inner) }])
+  }
+  return links
+}
+
 // Shared config + per-locale (EN root, FR under /fr/).
 export default defineConfig({
   title: 'Melis Platform',
@@ -213,6 +277,43 @@ export default defineConfig({
   cleanUrls: true,
   ignoreDeadLinks: 'localhostLinks',
   srcExclude: ['README.md'],
+
+  // The hreflang alternates VitePress adds per locale emit <xhtml:link> children,
+  // which the strict sitemaps.org 0.9 XSD rejects (extension elements). Drop them
+  // so the sitemap validates against the base schema; hreflang is declared in the
+  // page <head> instead (see transformHead), which Google treats as equivalent.
+  sitemap: {
+    hostname: CANONICAL_BASE,
+    transformItems: (items) => items.map(({ links, ...rest }) => rest),
+  },
+
+  // Per-page canonical + Open Graph + Twitter Card tags (social previews, SEO).
+  transformHead({ pageData, siteData }) {
+    const siteTitle = siteData.title || 'Melis Platform'
+    const title = pageData.title && pageData.title !== siteTitle
+      ? `${pageData.title} | ${siteTitle}`
+      : siteTitle
+    const description = pageData.description || pageData.frontmatter?.description || siteData.description || ''
+    const url = canonicalUrl(pageData.relativePath)
+    const ogLocale = OG_LOCALES[pageData.relativePath.split('/')[0]] ?? 'en_US'
+    return [
+      ['link', { rel: 'canonical', href: url }],
+      ...alternateLinks(pageData.relativePath),
+      ['meta', { property: 'og:type', content: 'website' }],
+      ['meta', { property: 'og:site_name', content: siteTitle }],
+      ['meta', { property: 'og:locale', content: ogLocale }],
+      ['meta', { property: 'og:title', content: title }],
+      ['meta', { property: 'og:description', content: description }],
+      ['meta', { property: 'og:url', content: url }],
+      ['meta', { property: 'og:image', content: SOCIAL_IMAGE }],
+      ['meta', { property: 'og:image:width', content: '1200' }],
+      ['meta', { property: 'og:image:height', content: '630' }],
+      ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
+      ['meta', { name: 'twitter:title', content: title }],
+      ['meta', { name: 'twitter:description', content: description }],
+      ['meta', { name: 'twitter:image', content: SOCIAL_IMAGE }],
+    ]
+  },
 
   // Always render code blocks with a dark (terminal-like) syntax theme,
   // so they stay high-contrast in light mode too.
